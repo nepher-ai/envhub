@@ -99,10 +99,16 @@ def login(api_key: str) -> bool:
     Returns:
         True if login successful, False otherwise
     """
-    # Validate API key by making a test request
+    # Validate API key by exchanging it for JWT tokens
+    # The backend requires API keys to be exchanged for JWT tokens via /api/v1/auth/api-key/login
     try:
-        client = APIClient(api_key=api_key)
-        client.get_user_info()
+        # Create a client without authentication to call the login endpoint
+        client = APIClient(api_key=None)
+        # Exchange API key for JWT tokens (this validates the key)
+        response = client.api_key_login(api_key)
+        # If successful, response contains access_token, refresh_token, and user info
+        if not response or "access_token" not in response:
+            return False
     except APIError:
         return False
 
@@ -131,6 +137,7 @@ def whoami() -> Optional[dict]:
         return None
 
     try:
+        # APIClient will automatically exchange API key for JWT token if needed
         client = APIClient(api_key=api_key)
         return client.get_user_info()
     except APIError:

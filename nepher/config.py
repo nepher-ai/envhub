@@ -32,7 +32,7 @@ class Config:
         """Load configuration from all sources."""
         # Default values
         self._config = {
-            "api_url": "https://api.envhub.nepher.ai",
+            "api_url": "http://localhost:8000",  # Default to local development server
             "api_key": None,
             "cache_dir": "~/.nepher/cache",
             "default_category": None,
@@ -160,6 +160,20 @@ class Config:
         """Get API key (may be None if not set)."""
         return self.get("api_key")
 
+    def _remove_none_values(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively remove None values from dictionary for TOML serialization."""
+        result = {}
+        for key, value in data.items():
+            if value is None:
+                continue  # Skip None values
+            elif isinstance(value, dict):
+                cleaned = self._remove_none_values(value)
+                if cleaned:  # Only include non-empty dicts
+                    result[key] = cleaned
+            else:
+                result[key] = value
+        return result
+
     def _save_config(self):
         """Save configuration to file."""
         if not self._config_file:
@@ -172,8 +186,11 @@ class Config:
         try:
             import tomli_w  # type: ignore
 
+            # Remove None values before serializing (TOML doesn't support None)
+            config_to_save = self._remove_none_values(self._config)
+
             with open(self._config_file, "wb") as f:
-                tomli_w.dump(self._config, f)
+                tomli_w.dump(config_to_save, f)
         except ImportError:
             # Fallback: save as simple key-value pairs if tomli_w not available
             import json

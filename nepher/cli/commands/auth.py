@@ -30,7 +30,17 @@ def whoami():
         print_info("Current user:")
         click.echo(f"  Username: {user_info.get('username', 'N/A')}")
         click.echo(f"  Email: {user_info.get('email', 'N/A')}")
-        click.echo(f"  Role: {user_info.get('role', 'N/A')}")
+        # Use envhub_role (backend returns this, not 'role')
+        envhub_role = user_info.get('envhub_role') or user_info.get('role', 'N/A')
+        click.echo(f"  Role: {envhub_role}")
+        # Display is_active status
+        is_active = user_info.get('is_active', True)
+        status_text = "Active" if is_active else "Inactive"
+        if user_info.get('blocked_until'):
+            status_text = f"Blocked until {user_info.get('blocked_until')}"
+            if user_info.get('blocked_reason'):
+                status_text += f" ({user_info.get('blocked_reason')})"
+        click.echo(f"  Status: {status_text}")
     else:
         print_error("Not authenticated. Use 'nepher login <api_key>' to authenticate.")
 

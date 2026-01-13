@@ -35,11 +35,15 @@ def list_cmd(category: str, type: str, benchmark: bool, search: str, output_json
             print_info(f"Found {len(envs)} environment(s):\n")
             for env in envs:
                 click.echo(f"  {env.get('id', 'N/A')}")
-                click.echo(f"    Name: {env.get('name', 'N/A')}")
+                click.echo(f"    Name: {env.get('original_name', 'N/A')}")
+                click.echo(f"    Version: {env.get('version', 'N/A')}")
                 click.echo(f"    Category: {env.get('category', 'N/A')}")
                 click.echo(f"    Type: {env.get('type', 'N/A')}")
-                if env.get("benchmark"):
+                click.echo(f"    Status: {env.get('status', 'N/A')}")
+                if env.get("is_benchmark"):
                     click.echo("    Benchmark: Yes")
+                if env.get("description"):
+                    click.echo(f"    Description: {env.get('description')}")
                 click.echo()
 
     except Exception as e:

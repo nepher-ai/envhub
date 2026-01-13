@@ -21,7 +21,40 @@ def download(env_id: str, category: str, cache_dir: str, force: bool):
             cache_dir=Path(cache_dir) if cache_dir else None, category=category
         )
 
-        # Check if already cached
+        # Try to find the environment - first by exact ID, then by name search
+        actual_env_id = env_id
+        try:
+            # Try to get by exact ID first
+            env_info = client.get_environment(env_id)
+            actual_env_id = env_info.get("id", env_id)
+        except Exception:
+            # If exact ID fails, search by name
+            print_info(f"Searching for environment matching '{env_id}'...")
+            envs = client.list_environments(category=category, search=env_id, limit=10)
+            
+            # Filter by exact name match (original_name)
+            matches = [e for e in envs if e.get("original_name") == env_id]
+            
+            if not matches:
+                # If no exact match, try partial matches
+                matches = [e for e in envs if env_id.lower() in e.get("original_name", "").lower()]
+            
+            if not matches:
+                print_error(f"Environment '{env_id}' not found in category '{category}'")
+                print_info("Use 'nepher list --category navigation' to see available environments")
+                return
+            
+            if len(matches) > 1:
+                # Multiple matches - use the most recent one
+                matches.sort(key=lambda x: x.get("uploaded_at", ""), reverse=True)
+                print_info(f"Found {len(matches)} matches, using most recent: {matches[0].get('id')}")
+            
+            actual_env_id = matches[0].get("id")
+            if not actual_env_id:
+                print_error(f"Could not determine environment ID for '{env_id}'")
+                return
+
+        # Check if already cached (using original name for cache key)
         if cache_manager.is_cached(env_id) and not force:
             print_info(f"Environment {env_id} is already cached.")
             return
@@ -32,7 +65,7 @@ def download(env_id: str, category: str, cache_dir: str, force: bool):
         cache_path = cache_manager.get_env_cache_path(env_id)
         zip_path = cache_path.parent / f"{env_id}.zip"
 
-        client.download_environment(env_id, zip_path)
+        client.download_environment(actual_env_id, zip_path)
 
         # Extract bundle
         print_info("Extracting bundle...")

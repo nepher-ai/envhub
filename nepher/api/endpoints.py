@@ -10,7 +10,7 @@ class APIEndpoints:
 
     # Health & Info
     HEALTH = "/api/v1/health"
-    INFO = "/api/v1/info"
+    INFO = "/"  # Root endpoint for API info
 
     # Environment Management
     ENVS = "/api/v1/envs/"
@@ -65,20 +65,33 @@ class APIEndpoints:
         """Restore environment endpoint."""
         return f"/api/v1/envs/{env_id}/restore"
 
+    # Authentication
+    API_KEY_LOGIN = "/api/v1/auth/api-key/login"
+
+    # API Key Management
+    API_KEYS = "/api/v1/api-keys/"
+
+    @staticmethod
+    def api_key(api_key_id: str) -> str:
+        """Get/delete API key endpoint."""
+        return f"/api/v1/api-keys/{api_key_id}"
+
+    @staticmethod
+    def api_key_regenerate(api_key_id: str) -> str:
+        """Regenerate API key endpoint."""
+        return f"/api/v1/api-keys/{api_key_id}/regenerate"
+
     # User Management
-    USERS_SIGNUP = "/api/v1/users/signup"
-    USERS_LOGIN = "/api/v1/users/login"
     USERS_ME = "/api/v1/users/me"
-    USERS_REGENERATE_API_KEY = "/api/v1/users/regenerate-api-key"
     USERS = "/api/v1/users/"
 
     @staticmethod
-    def user_role(user_id: int) -> str:
-        """Update user role endpoint."""
-        return f"/api/v1/users/{user_id}/role"
+    def user_envhub_role(user_id: str) -> str:
+        """Get/update user envhub role endpoint."""
+        return f"/api/v1/users/{user_id}/envhub-role"
 
     @staticmethod
-    def user_status(user_id: int) -> str:
+    def user_status(user_id: str) -> str:
         """Update user status endpoint."""
         return f"/api/v1/users/{user_id}/status"
 
