@@ -3,13 +3,15 @@ Preset environment loader.
 """
 
 import importlib.util
+import sys
 from pathlib import Path
+from typing import Optional
 from nepher.core import Environment
 from nepher.loader.base import BaseLoader
 from nepher.env_cfgs.registry import get_config_class
 
 
-def load_preset_module(preset_path: str, base_path: Path = None):
+def load_preset_module(preset_path: str, base_path: Optional[Path] = None):
     """Load preset module from path.
     
     Args:
@@ -30,12 +32,19 @@ def load_preset_module(preset_path: str, base_path: Path = None):
         if not file_path.exists():
             raise FileNotFoundError(f"Preset file not found: {file_path}")
         
+        # Generate a unique module name based on the file path
+        # Use a name that won't conflict with existing modules
+        module_name = f"nepher_preset_{file_path.stem}_{id(file_path)}"
+        
         # Load module from file
-        spec = importlib.util.spec_from_file_location("preset_module", file_path)
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"Could not load preset from {file_path}")
         
         module = importlib.util.module_from_spec(spec)
+        # Register module in sys.modules BEFORE executing it
+        # This is required for @configclass to work properly
+        sys.modules[module_name] = module
         spec.loader.exec_module(module)
         
         # Find the config class (usually ends with "Cfg" or "PresetCfg")

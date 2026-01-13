@@ -2,24 +2,31 @@
 Base environment configuration interface.
 """
 
-from abc import ABC, abstractmethod
 from typing import Any
 
 
-class BaseEnvCfg(ABC):
-    """Base interface for all environment configs (category-agnostic)."""
+class BaseEnvCfg:
+    """Base interface for all environment configs (category-agnostic).
+    
+    Note: Not using ABC to avoid pickling issues with @configclass decorator.
+    Subclasses should override methods and raise NotImplementedError if not implemented.
+    """
 
     name: str = ""
     description: str = ""
     category: str = ""
 
-    @abstractmethod
     def get_terrain_cfg(self) -> Any:
-        """Return terrain configuration."""
-        pass
+        """Return terrain configuration.
+        
+        Subclasses must override this method.
+        """
+        raise NotImplementedError("Subclass must implement get_terrain_cfg()")
 
-    @abstractmethod
     def get_scene_cfg(self) -> Any:
-        """Return scene configuration."""
-        pass
+        """Return scene configuration.
+        
+        Subclasses must override this method.
+        """
+        raise NotImplementedError("Subclass must implement get_scene_cfg()")
 
