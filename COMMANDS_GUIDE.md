@@ -215,7 +215,10 @@ nepher upload ./environments/usd-small-warehouse --category navigation --force
 # Upload with thumbnail
 nepher upload ./environments/digital-twin-warehouse-v1 --category navigation --thumbnail ./environments/digital-twin-warehouse-v1/thumbnail.png
 
-nepher upload ./environments/indoor-environments-v1 --category navigation --thumbnail ./thumbnails/indoor-thumbnail.jpg
+nepher upload ./environments/indoor-environments-v1 --category navigation --thumbnail ./environments/indoor-environments-v1/thumbnail.png 
+nepher upload ./environments/waypoint-benchmark-v1 --category navigation --thumbnail ./environments/waypoint-benchmark-v1/thumbnail.png --benchmark
+
+
 ```
 
 **Environment Bundle Structure:**

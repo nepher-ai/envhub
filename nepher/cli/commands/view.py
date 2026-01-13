@@ -5,6 +5,17 @@ from nepher.loader.registry import load_env, load_scene
 from nepher.cli.utils import print_error, print_info
 
 
+def _check_isaaclab_installed():
+    """Check if isaaclab is installed and raise error if not."""
+    try:
+        import isaaclab  # noqa: F401
+    except ImportError:
+        raise ImportError(
+            "Isaac Lab is not installed. The 'view' command requires Isaac Lab to be installed.\n"
+            "Please install Isaac Lab to use this command. See: https://isaac-sim.github.io/IsaacLab/"
+        )
+
+
 @click.command()
 @click.argument("env_id")
 @click.option("--category", required=True, help="Environment category")
@@ -12,6 +23,9 @@ from nepher.cli.utils import print_error, print_info
 def view(env_id: str, category: str, scene: str):
     """View environment in Isaac Sim (requires isaaclab)."""
     try:
+        # Check if isaaclab is installed
+        _check_isaaclab_installed()
+        
         # Load environment
         env = load_env(env_id, category)
 

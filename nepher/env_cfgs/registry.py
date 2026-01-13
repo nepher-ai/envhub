@@ -1,6 +1,4 @@
-"""
-Config class registry for category-specific configs.
-"""
+"""Config class registry for category-specific configs."""
 
 from typing import Dict, Type
 from nepher.env_cfgs.base import BaseEnvCfg
@@ -8,34 +6,28 @@ from nepher.env_cfgs.base import BaseEnvCfg
 # Registry: (category, type) -> config class
 _CONFIG_REGISTRY: Dict[tuple[str, str], Type[BaseEnvCfg]] = {}
 
+# Register navigation config classes
+try:
+    from nepher.env_cfgs.navigation import UsdNavigationEnvCfg, PresetNavigationEnvCfg
+    _CONFIG_REGISTRY.update({
+        ("navigation", "usd"): UsdNavigationEnvCfg,
+        ("navigation", "preset"): PresetNavigationEnvCfg,
+    })
+except ImportError as e:
+    pass
 
 def get_config_class(category: str, type: str) -> Type[BaseEnvCfg]:
-    """
-    Get config class for category and type.
-
-    Args:
-        category: Environment category
-        type: Environment type ("usd" or "preset")
-
-    Returns:
-        Config class
-    """
+    """Get config class for category and type."""
     key = (category, type)
     if key not in _CONFIG_REGISTRY:
-        # Default to base config if not registered
-        from nepher.env_cfgs.base import BaseEnvCfg
-        return BaseEnvCfg
+        raise ValueError(
+            f"No config class registered for category={category}, type={type}. "
+            f"Available registrations: {list(_CONFIG_REGISTRY.keys())}"
+        )
     return _CONFIG_REGISTRY[key]
 
 
 def register_config_class(category: str, type: str, config_class: Type[BaseEnvCfg]):
-    """
-    Register a custom config class.
-
-    Args:
-        category: Environment category
-        type: Environment type ("usd" or "preset")
-        config_class: Config class to register
-    """
+    """Register a custom config class."""
     _CONFIG_REGISTRY[(category, type)] = config_class
 
