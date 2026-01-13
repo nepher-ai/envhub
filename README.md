@@ -143,9 +143,6 @@ nepher upload ./my-env --category manipulation
 - **Seamless Integration**: Direct integration with `envhub-backend` API
 - **Flexible Configuration**: User-configurable cache directories and settings
 
-## Documentation
-
-See [NEPHER_PROJECT_DESCRIPTION.md](../NEPHER_PROJECT_DESCRIPTION.md) for complete project documentation.
 
 ## License
 
