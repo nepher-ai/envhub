@@ -120,6 +120,12 @@ from isaaclab.envs import ManagerBasedRLEnv
 # Authenticate with your API key
 nepher login <api_key>
 
+# Check current authentication status
+nepher whoami
+
+# Logout and clear credentials
+nepher logout
+
 # List available environments
 nepher list --category navigation
 
@@ -133,7 +139,7 @@ nepher view <env_id> --category navigation
 nepher view <env_id> --category navigation --scene <scene_name>
 
 # Upload your own environment
-nepher upload ./my-env --category manipulation
+nepher upload ./my-env --category manipulation --thumbnail ./thumbnail.png
 ```
 
 ## Features

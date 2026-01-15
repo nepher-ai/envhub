@@ -9,7 +9,7 @@ pip install nepher
 Or install from source:
 
 ```bash
-git clone https://github.com/your-org/envhub.git
+git clone https://github.com/nepher_ai/envhub.git
 cd envhub
 pip install -e .
 ```
@@ -20,6 +20,13 @@ pip install -e .
 
 ```bash
 nepher login <your_api_key>
+```
+
+### 1.1. Check Authentication Status
+
+```bash
+# Show current user information
+nepher whoami
 ```
 
 ### 2. List Environments
@@ -47,7 +54,7 @@ nepher download <env_id> --category navigation
 ### 4. Upload Environment
 
 ```bash
-nepher upload ./my-env.zip --category manipulation
+nepher upload ./my-env.zip --category manipulation --thumbnail ./thumbnail.png
 ```
 
 ### 5. Manage Cache
@@ -63,7 +70,22 @@ nepher cache clear
 nepher cache info
 ```
 
-### 6. Configure
+### 6. View Environment
+
+```bash
+# View an environment in Isaac Sim
+nepher view <env_id> --category navigation
+
+# View a specific scene
+nepher view <env_id> --category navigation --scene <scene_name>
+```
+
+**Note:** The `view` command requires Isaac Lab to be installed. If Isaac Lab is not available in your current environment, use the script instead:
+```bash
+isaaclab.bat -p scripts/nepher_view.py <env_id> --category navigation [--scene <scene>]
+```
+
+### 7. Configure
 
 ```bash
 # Set cache directory
@@ -98,5 +120,4 @@ scene = nepher.load_scene(env, scene="scene-name", category="navigation")
 ## Next Steps
 
 - See [README.md](README.md) for more details
-- See [NEPHER_PROJECT_DESCRIPTION.md](../NEPHER_PROJECT_DESCRIPTION.md) for complete documentation
 
