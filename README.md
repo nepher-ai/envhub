@@ -129,6 +129,9 @@ nepher logout
 # List available environments
 nepher list --category navigation
 
+# List evaluation benchmarks (evaluators only - for tournaments)
+nepher list --eval-benchmarks
+
 # Download an environment
 nepher download <env_id> --category navigation
 

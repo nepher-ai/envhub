@@ -183,6 +183,21 @@ class APIClient:
         # Fallback for backward compatibility
         return result if isinstance(result, list) else []
 
+    def list_eval_benchmarks(self) -> List[Dict[str, Any]]:
+        """
+        List evaluation benchmarks.
+
+        Returns:
+            List of evaluation benchmark dictionaries
+        """
+        response = self._request("GET", APIEndpoints.ENVS_EVAL_BENCHMARKS)
+        result = response.json()
+        # Backend returns EnvironmentListResponse with nested 'environments' array
+        if isinstance(result, dict) and "environments" in result:
+            return result["environments"]
+        # Fallback for backward compatibility
+        return result if isinstance(result, list) else []
+
     def get_environment(self, env_id: str) -> Dict[str, Any]:
         """Get environment details."""
         response = self._request("GET", APIEndpoints.env(env_id))

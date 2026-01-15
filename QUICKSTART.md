@@ -43,7 +43,12 @@ nepher list --type usd
 
 # Search
 nepher list --search "indoor"
+
+# List evaluation benchmarks (evaluators only - for tournaments)
+nepher list --eval-benchmarks
 ```
+
+**Note:** The `--eval-benchmarks` flag is restricted to evaluators and is used to access evaluation benchmarks for tournaments.
 
 ### 3. Download Environment
 
