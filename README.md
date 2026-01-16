@@ -135,13 +135,16 @@ nepher list --eval-benchmarks
 # Download an environment
 nepher download <env_id> --category navigation
 
+# List cached environments
+nepher cache list
+
 # View an environment in Isaac Sim
 nepher view <env_id> --category navigation
 
 # View a specific scene
 nepher view <env_id> --category navigation --scene <scene_name>
 
-# Upload your own environment
+# Upload your own environment (contributors or evaluators only)
 nepher upload ./my-env --category manipulation --thumbnail ./thumbnail.png
 ```
 

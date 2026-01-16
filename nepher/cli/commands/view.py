@@ -3,12 +3,11 @@
 import argparse
 import os
 import sys
+from typing import Optional
 import click
 from nepher.loader.registry import load_env, load_scene
 from nepher.cli.utils import print_error, print_info, print_success
 
-# Store original sys.argv for AppLauncher argument extraction
-# This is set by the script before calling the view command
 original_argv = None
 
 
@@ -129,12 +128,10 @@ def _spawn_preset_scene(scene_cfg):
     
     print_info("Spawning preset scene...")
     
-    # Create the /World prim if it doesn't exist
     stage = omni.usd.get_context().get_stage()
     if not stage.GetPrimAtPath("/World"):
         UsdGeom.Xform.Define(stage, "/World")
     
-    # 1. Spawn terrain
     terrain_cfg = scene_cfg.get_terrain_cfg()
     if terrain_cfg:
         if not getattr(terrain_cfg, 'prim_path', None):
@@ -142,7 +139,6 @@ def _spawn_preset_scene(scene_cfg):
         TerrainImporter(terrain_cfg)
         print_success(f"Terrain spawned (type: {terrain_cfg.terrain_type})")
     
-    # 2. Spawn lights
     if hasattr(scene_cfg, 'get_light_cfgs'):
         for name, light_cfg in (scene_cfg.get_light_cfgs() or {}).items():
             prim_path = getattr(light_cfg, 'prim_path', f"/World/Lights/{name}")
@@ -150,7 +146,6 @@ def _spawn_preset_scene(scene_cfg):
                 light_cfg.spawn.func(prim_path, light_cfg.spawn)
                 print_success(f"Light '{name}' spawned at {prim_path}")
     
-    # 3. Spawn obstacles
     if hasattr(scene_cfg, 'get_obstacle_cfgs'):
         obstacle_cfgs = scene_cfg.get_obstacle_cfgs()
         if obstacle_cfgs:
@@ -189,7 +184,6 @@ def _spawn_preset_scene(scene_cfg):
                                     )
             print_success(f"Spawned {len(obstacle_cfgs)} obstacles")
     
-    # 4. Add default lighting if no lights were spawned
     sky_light_path = "/World/SkyLight"
     if not stage.GetPrimAtPath(sky_light_path):
         light_cfg = sim_utils.DomeLightCfg(intensity=1000.0, color=(1.0, 1.0, 1.0))
@@ -207,16 +201,12 @@ def _setup_app_launcher():
     Returns:
         The SimulationApp instance from the AppLauncher.
     """
-    # Check if isaaclab is installed first
     _check_isaaclab_installed()
     
-    # Import AppLauncher (this should work even before app is launched)
     from isaaclab.app import AppLauncher
     
-    # Use original argv if available, otherwise fall back to current sys.argv
     argv_to_parse = original_argv if original_argv is not None else sys.argv
     
-    # Filter out nepher-specific arguments
     app_launcher_args = []
     i = 1  # Skip script name
     while i < len(argv_to_parse):
@@ -230,12 +220,10 @@ def _setup_app_launcher():
         app_launcher_args.append(arg)
         i += 1
     
-    # Create parser for AppLauncher args
     parser = argparse.ArgumentParser()
     AppLauncher.add_app_launcher_args(parser)
     args_cli = parser.parse_args(app_launcher_args)
     
-    # Launch Isaac Sim app
     app_launcher = AppLauncher(args_cli)
     return app_launcher.app
 
@@ -244,28 +232,22 @@ def _setup_app_launcher():
 @click.argument("env_id")
 @click.option("--category", required=True, help="Environment category")
 @click.option("--scene", help="Scene name or index")
-def view(env_id: str, category: str, scene: str):
+def view(env_id: str, category: str, scene: Optional[str]):
     """View environment in Isaac Sim (requires isaaclab)."""
     simulation_app = None
     try:
-        # Set up AppLauncher and get simulation app
-        # This must be done before importing Isaac Lab modules
         simulation_app = _setup_app_launcher()
         
-        # Import Isaac Lab modules (must be after app is launched)
         import isaaclab.sim as sim_utils
         from isaaclab.sim import SimulationContext
         import omni.usd
         
-        # Load environment
         env = load_env(env_id, category)
 
         if scene:
-            # Load specific scene
             scene_cfg = load_scene(env, scene, category)
             print_info(f"Loaded scene: {scene}")
             
-            # Check if it's a USD scene by looking for usd_path attribute
             usd_path = getattr(scene_cfg, 'usd_path', None)
             
             sim_cfg = sim_utils.SimulationCfg(dt=0.01)
@@ -278,22 +260,21 @@ def view(env_id: str, category: str, scene: str):
                 _spawn_preset_scene(scene_cfg)
                 sim.set_camera_view(eye=[15.0, 15.0, 12.0], target=[0.0, 0.0, 0.0])
             
-            # Reset simulation
             sim.reset()
             
             print_success("Scene loaded successfully!")
             click.echo("\n" + "=" * 60)
-            click.echo("📷 Camera Controls:")
+            click.echo("Camera Controls:")
             click.echo("   • Left-click + drag: Rotate view")
             click.echo("   • Right-click + drag: Pan view")
             click.echo("   • Scroll: Zoom in/out")
             click.echo("   • F: Focus on selection")
-            click.echo("\n⚡ Press Ctrl+C in terminal to exit")
+            click.echo("\nPress Ctrl+C in terminal to exit")
             click.echo("=" * 60)
             
             try:
                 simulation_app = sim.app
-                click.echo("\n🔄 Running simulation...\n   (Press Ctrl+C to exit)")
+                click.echo("\nRunning simulation...\n   (Press Ctrl+C to exit)")
                 if simulation_app and hasattr(simulation_app, 'is_running'):
                     while simulation_app.is_running():
                         sim.step()
@@ -306,14 +287,14 @@ def view(env_id: str, category: str, scene: str):
                 if os.getenv("NEPHER_DEBUG"):
                     import traceback
                     traceback.print_exc()
-                click.echo(f"\n⚠ Could not start simulation loop: {e}")
+                click.echo(f"\nWarning: Could not start simulation loop: {e}")
                 click.echo("   Scene is loaded. You can interact with it in the Isaac Sim viewport.")
         else:
             print_info(f"Environment: {env.name}")
             click.echo(f"  Scenes: {len(env.get_all_scenes())}")
             click.echo("\nAvailable scenes:")
-            for i, scene_name in enumerate(env.get_all_scenes()):
-                click.echo(f"  [{i}] {scene_name}")
+            for i, scene_obj in enumerate(env.get_all_scenes()):
+                click.echo(f"  [{i}] {scene_obj.name}")
 
     except KeyboardInterrupt:
         click.echo("\n\nExiting...")
@@ -321,10 +302,9 @@ def view(env_id: str, category: str, scene: str):
         import traceback
         print_error(f"Failed to view environment: {str(e)}")
         if __debug__ or os.getenv("NEPHER_DEBUG"):
-            print(f"Exception type: {type(e).__name__}")
+            click.echo(f"Exception type: {type(e).__name__}")
             traceback.print_exc()
     finally:
-        # Close the simulation app if it was created
         if simulation_app is not None:
             simulation_app.close()
 

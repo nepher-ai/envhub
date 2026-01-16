@@ -30,16 +30,14 @@ class Config:
 
     def _load_config(self):
         """Load configuration from all sources."""
-        # Default values
         self._config = {
-            "api_url": "http://localhost:8000",  # Default to local development server
+            "api_url": "http://localhost:8000",
             "api_key": None,
             "cache_dir": "~/.nepher/cache",
             "default_category": None,
             "categories": {},
         }
 
-        # Load from config file
         config_file = self._find_config_file()
         if config_file and config_file.exists():
             self._config_file = config_file
@@ -55,9 +53,8 @@ class Config:
                         file_config = json.load(f)
                         self._config.update(file_config)
             except Exception:
-                pass  # Config file is optional
+                pass
 
-        # Override with environment variables
         if os.getenv("NEPHER_API_URL"):
             self._config["api_url"] = os.getenv("NEPHER_API_URL")
         if os.getenv("NEPHER_API_KEY"):
@@ -67,12 +64,10 @@ class Config:
 
     def _find_config_file(self) -> Optional[Path]:
         """Find config file in standard locations."""
-        # Check for .nepherrc in current directory
         cwd_config = Path.cwd() / ".nepherrc"
         if cwd_config.exists():
             return cwd_config
 
-        # Check for ~/.nepher/config.toml
         home_config = Path.home() / ".nepher" / "config.toml"
         if home_config.exists():
             return home_config
@@ -106,16 +101,13 @@ class Config:
         keys = key.split(".")
         config = self._config
 
-        # Navigate/create nested structure
         for k in keys[:-1]:
             if k not in config or not isinstance(config[k], dict):
                 config[k] = {}
             config = config[k]
 
-        # Set the value
         config[keys[-1]] = value
 
-        # Save to file if requested
         if save:
             self._save_config()
 
@@ -144,10 +136,7 @@ class Config:
         else:
             path_str = self.get("cache_dir")
 
-        # Expand ~ and resolve path
         path = Path(path_str).expanduser().resolve()
-
-        # Create directory if it doesn't exist
         path.mkdir(parents=True, exist_ok=True)
 
         return path
@@ -177,29 +166,24 @@ class Config:
     def _save_config(self):
         """Save configuration to file."""
         if not self._config_file:
-            # Create default config file location
             config_dir = Path.home() / ".nepher"
             config_dir.mkdir(parents=True, exist_ok=True)
             self._config_file = config_dir / "config.toml"
 
-        # Convert to TOML format and save
         try:
-            import tomli_w  # type: ignore
+            import tomli_w
 
-            # Remove None values before serializing (TOML doesn't support None)
             config_to_save = self._remove_none_values(self._config)
 
             with open(self._config_file, "wb") as f:
                 tomli_w.dump(config_to_save, f)
         except ImportError:
-            # Fallback: save as simple key-value pairs if tomli_w not available
             import json
 
             with open(self._config_file.with_suffix(".json"), "w") as f:
                 json.dump(self._config, f, indent=2)
 
 
-# Global config instance
 _config_instance: Optional[Config] = None
 
 

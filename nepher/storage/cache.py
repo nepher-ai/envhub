@@ -35,14 +35,22 @@ class CacheManager:
         return cache_path.exists() and (cache_path / "manifest.yaml").exists()
 
     def list_cached(self) -> List[str]:
-        """List all cached environment IDs."""
+        """
+        List all cached environment IDs.
+        
+        Returns:
+            List of cached environment ID strings
+        """
         if not self.cache_dir.exists():
             return []
 
         cached = []
-        for item in self.cache_dir.iterdir():
-            if item.is_dir() and (item / "manifest.yaml").exists():
-                cached.append(item.name)
+        try:
+            for item in self.cache_dir.iterdir():
+                if item.is_dir() and (item / "manifest.yaml").exists():
+                    cached.append(item.name)
+        except (PermissionError, OSError) as e:
+            raise RuntimeError(f"Cannot access cache directory {self.cache_dir}: {e}") from e
 
         return cached
 
@@ -52,15 +60,21 @@ class CacheManager:
 
         Args:
             env_id: Specific environment ID to clear, or None to clear all
+            
+        Raises:
+            RuntimeError: If cache directory cannot be accessed
         """
-        if env_id:
-            cache_path = self.get_env_cache_path(env_id)
-            if cache_path.exists():
-                shutil.rmtree(cache_path)
-        else:
-            if self.cache_dir.exists():
-                shutil.rmtree(self.cache_dir)
-                self.cache_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            if env_id:
+                cache_path = self.get_env_cache_path(env_id)
+                if cache_path.exists():
+                    shutil.rmtree(cache_path)
+            else:
+                if self.cache_dir.exists():
+                    shutil.rmtree(self.cache_dir)
+                    self.cache_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            raise RuntimeError(f"Cannot clear cache: {e}") from e
 
     def get_cache_info(self) -> Dict[str, Any]:
         """Get cache statistics."""
@@ -77,10 +91,13 @@ class CacheManager:
         env_sizes = {}
 
         for env_id in envs:
-            env_path = self.get_env_cache_path(env_id)
-            size = sum(f.stat().st_size for f in env_path.rglob("*") if f.is_file())
-            env_sizes[env_id] = size
-            total_size += size
+            try:
+                env_path = self.get_env_cache_path(env_id)
+                size = sum(f.stat().st_size for f in env_path.rglob("*") if f.is_file())
+                env_sizes[env_id] = size
+                total_size += size
+            except (PermissionError, OSError):
+                continue
 
         return {
             "cache_dir": str(self.cache_dir),
@@ -95,16 +112,22 @@ class CacheManager:
 
         Args:
             new_cache_dir: New cache directory path
+            
+        Raises:
+            RuntimeError: If migration fails
         """
         if not self.cache_dir.exists():
             return
 
-        new_cache_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            new_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        for env_id in self.list_cached():
-            old_path = self.get_env_cache_path(env_id)
-            new_path = new_cache_dir / env_id
-            shutil.move(str(old_path), str(new_path))
+            for env_id in self.list_cached():
+                old_path = self.get_env_cache_path(env_id)
+                new_path = new_cache_dir / env_id
+                shutil.move(str(old_path), str(new_path))
+        except (PermissionError, OSError, shutil.Error) as e:
+            raise RuntimeError(f"Cannot migrate cache to {new_cache_dir}: {e}") from e
 
 
 # Global cache manager instance

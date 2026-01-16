@@ -1,10 +1,11 @@
 """Upload environment command."""
 
-import click
-import zipfile
-import tempfile
 import shutil
+import tempfile
+import zipfile
 from pathlib import Path
+from typing import Optional
+import click
 from nepher.api.client import get_client
 from nepher.storage.bundle import BundleManager
 from nepher.cli.utils import print_error, print_success, print_info
@@ -16,7 +17,7 @@ from nepher.cli.utils import print_error, print_success, print_info
 @click.option("--benchmark", is_flag=True, help="Mark as benchmark environment")
 @click.option("--force", is_flag=True, help="Force upload even if duplicate exists")
 @click.option("--thumbnail", type=click.Path(exists=True), help="Thumbnail image path")
-def upload(path: str, category: str, benchmark: bool, force: bool, thumbnail: str):
+def upload(path: str, category: str, benchmark: bool, force: bool, thumbnail: Optional[str]):
     """Upload an environment bundle."""
     temp_zip = None
     try:
@@ -25,26 +26,21 @@ def upload(path: str, category: str, benchmark: bool, force: bool, thumbnail: st
             print_error(f"Bundle not found: {bundle_path}")
             return
 
-        # Validate bundle
         print_info("Validating bundle...")
         if not BundleManager.validate_bundle(bundle_path):
             print_error("Invalid bundle: manifest.yaml not found")
             return
 
-        # If it's a directory, create a ZIP file
         upload_path = bundle_path
         if bundle_path.is_dir():
             print_info("Creating bundle ZIP...")
-            # Create temporary ZIP file
             temp_dir = tempfile.gettempdir()
             zip_name = f"{bundle_path.name}.zip"
             temp_zip = Path(temp_dir) / zip_name
             
-            # Create ZIP from directory
             with zipfile.ZipFile(temp_zip, "w", zipfile.ZIP_DEFLATED) as zipf:
                 for file_path in bundle_path.rglob("*"):
                     if file_path.is_file():
-                        # Get relative path from bundle directory
                         arcname = file_path.relative_to(bundle_path)
                         zipf.write(file_path, arcname)
             
@@ -68,7 +64,6 @@ def upload(path: str, category: str, benchmark: bool, force: bool, thumbnail: st
     except Exception as e:
         print_error(f"Failed to upload environment: {str(e)}")
     finally:
-        # Clean up temporary ZIP file if created
         if temp_zip and temp_zip.exists():
             temp_zip.unlink()
 

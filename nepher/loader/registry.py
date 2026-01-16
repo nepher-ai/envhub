@@ -2,7 +2,7 @@
 Loader registry and convenience functions.
 """
 
-from typing import Optional
+from typing import Optional, Union
 from nepher.core import Environment
 from nepher.storage.cache import get_cache_manager
 from nepher.storage.manifest import ManifestParser
@@ -25,19 +25,16 @@ def load_env(env_id: str, category: str) -> Environment:
     cache_manager = get_cache_manager(category=category)
     cache_path = cache_manager.get_env_cache_path(env_id)
 
-    # Check if cached
     if cache_manager.is_cached(env_id):
         manifest_path = cache_path / "manifest.yaml"
         return ManifestParser.parse(manifest_path)
 
-    # Not cached - would need to download
-    # For now, raise error - download should be done separately
     raise FileNotFoundError(
         f"Environment {env_id} not found in cache. Use download() first."
     )
 
 
-def load_scene(env: Environment, scene: str | int, category: str):
+def load_scene(env: Environment, scene: Union[str, int], category: str):
     """
     Load scene config.
 
@@ -49,12 +46,10 @@ def load_scene(env: Environment, scene: str | int, category: str):
     Returns:
         Category-appropriate config class
     """
-    # Find scene
     scene_obj = env.get_scene(scene)
     if not scene_obj:
         raise ValueError(f"Scene {scene} not found in environment {env.id}")
 
-    # Determine loader type
     if scene_obj.usd:
         loader = UsdLoader()
         scene_idx = env.scenes.index(scene_obj)

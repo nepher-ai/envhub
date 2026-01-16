@@ -25,22 +25,22 @@ class BundleManager:
         Returns:
             Environment object from manifest
         """
-        # Create destination directory
         dest_dir.mkdir(parents=True, exist_ok=True)
 
-        # Extract ZIP
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(dest_dir)
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(dest_dir)
+        except zipfile.BadZipFile as e:
+            raise ValueError(f"Invalid ZIP file: {zip_path}") from e
+        except (PermissionError, OSError) as e:
+            raise RuntimeError(f"Cannot extract bundle to {dest_dir}: {e}") from e
 
-        # Find and parse manifest
         manifest_path = dest_dir / "manifest.yaml"
         if not manifest_path.exists():
             raise ValueError(f"Manifest not found in bundle: {manifest_path}")
 
-        # Parse manifest
         env = ManifestParser.parse(manifest_path)
 
-        # Update paths to be relative to cache directory
         for scene in env.scenes:
             if scene.usd:
                 scene.usd = dest_dir / scene.usd
@@ -63,12 +63,10 @@ class BundleManager:
             True if valid, False otherwise
         """
         try:
-            # If it's a directory, check for manifest.yaml directly
             if bundle_path.is_dir():
                 manifest_path = bundle_path / "manifest.yaml"
                 return manifest_path.exists()
             
-            # If it's a ZIP file, check inside the ZIP
             if bundle_path.suffix.lower() == ".zip":
                 with zipfile.ZipFile(bundle_path, "r") as zip_ref:
                     namelist = zip_ref.namelist()

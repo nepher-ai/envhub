@@ -23,15 +23,10 @@ class UsdLoader(BaseLoader):
 
         scene = env.scenes[scene_idx]
 
-        # If scene has a Python scene file, load it (similar to preset)
         if scene.scene:
-            # Load scene module from file
             scene_class = load_preset_module(scene.scene, base_path=env.cache_path)
-            
-            # Instantiate the scene config
             cfg = scene_class()
             
-            # Override with USD-specific data from manifest if not already set
             if scene.usd and not cfg.usd_path:
                 cfg.usd_path = str(scene.usd)
             if scene.omap_meta and not cfg.occupancy_map_yaml:
@@ -43,11 +38,7 @@ class UsdLoader(BaseLoader):
             
             return cfg
         
-        # No scene file - create basic config from manifest
-        # Get category-specific config class from registry
         config_class = get_config_class(category=category, type="usd")
-
-        # Instantiate with USD data
         cfg = config_class()
         cfg.usd_path = str(scene.usd) if scene.usd else None
         cfg.occupancy_map_yaml = str(scene.omap_meta) if scene.omap_meta else None

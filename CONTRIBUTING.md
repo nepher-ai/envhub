@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Nepher!
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-org/envhub.git
+git clone https://github.com/nepher-ai/envhub.git
 cd envhub
 ```
 

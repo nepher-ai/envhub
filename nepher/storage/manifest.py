@@ -22,8 +22,13 @@ class ManifestParser:
         Returns:
             Environment object
         """
-        with open(manifest_path, "r") as f:
-            data = yaml.safe_load(f)
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Manifest file not found: {manifest_path}")
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in manifest file {manifest_path}: {e}") from e
 
         env_id = data.get("id", manifest_path.parent.name)
         name = data.get("name", env_id)
@@ -34,10 +39,8 @@ class ManifestParser:
         benchmark = data.get("benchmark", False)
         metadata = data.get("metadata", {})
 
-        # Determine type
         env_type = "preset" if data.get("preset_scenes") else "usd"
 
-        # Parse scenes
         scenes = []
         for scene_data in data.get("scenes", []):
             scene = Scene(
@@ -50,7 +53,6 @@ class ManifestParser:
             )
             scenes.append(scene)
 
-        # Parse preset scenes
         preset_scenes = []
         for preset_data in data.get("preset_scenes", []):
             scene = Scene(

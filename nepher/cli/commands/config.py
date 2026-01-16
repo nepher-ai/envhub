@@ -32,7 +32,6 @@ def get(key: str):
 def set(key: str, value: str):
     """Set configuration value."""
     try:
-        # Try to parse as appropriate type
         if value.lower() in ("true", "false"):
             value = value.lower() == "true"
         elif value.isdigit():
@@ -51,11 +50,11 @@ def set(key: str, value: str):
 def list():
     """List all configuration values."""
     try:
-        config = get_config()
+        cfg = get_config()
         print_info("Configuration:")
-        click.echo(f"  api_url: {config.get('api_url')}")
-        click.echo(f"  cache_dir: {config.get('cache_dir')}")
-        click.echo(f"  default_category: {config.get('default_category')}")
+        click.echo(f"  api_url: {cfg.get('api_url')}")
+        click.echo(f"  cache_dir: {cfg.get('cache_dir')}")
+        click.echo(f"  default_category: {cfg.get('default_category')}")
 
     except Exception as e:
         print_error(f"Failed to list config: {str(e)}")
@@ -65,8 +64,8 @@ def list():
 def reset():
     """Reset configuration to defaults."""
     try:
-        # Clear config file
-        config_file = get_config()._config_file
+        config = get_config()
+        config_file = getattr(config, "_config_file", None)
         if config_file and config_file.exists():
             config_file.unlink()
             print_success("Configuration reset to defaults.")

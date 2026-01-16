@@ -31,15 +31,12 @@ class APIClient:
         self.api_url = (api_url or config.get_api_url()).rstrip("/")
         self.api_key = api_key or config.get_api_key()
         self.session = requests.Session()
-        self._jwt_token: Optional[str] = None  # Cached JWT token
+        self._jwt_token: Optional[str] = None
 
         if self.api_key:
-            # Check if it's an API key (starts with "envhub-") or a JWT token (starts with "eyJ")
             if self.api_key.startswith("envhub-"):
-                # It's an API key - we'll exchange it for a token on first authenticated request
                 self._raw_api_key = self.api_key
             else:
-                # Assume it's a JWT token - use it directly
                 self._jwt_token = self.api_key
                 self._raw_api_key = None
                 self.session.headers.update({"Authorization": f"Bearer {self._jwt_token}"})
@@ -49,8 +46,6 @@ class APIClient:
     def _ensure_jwt_token(self):
         """Exchange API key for JWT token if needed."""
         if self._raw_api_key and not self._jwt_token:
-            # Exchange API key for JWT token
-            # Temporarily remove auth header to make unauthenticated request
             original_auth = self.session.headers.get("Authorization")
             self.session.headers.pop("Authorization", None)
             try:
@@ -65,7 +60,6 @@ class APIClient:
                 if self._jwt_token:
                     self.session.headers.update({"Authorization": f"Bearer {self._jwt_token}"})
             except Exception:
-                # Restore original auth header on error
                 if original_auth:
                     self.session.headers.update({"Authorization": original_auth})
                 raise
@@ -75,7 +69,7 @@ class APIClient:
         method: str,
         endpoint: str,
         params: Optional[Dict[str, Any]] = None,
-        json: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
         files: Optional[Dict[str, Any]] = None,
         stream: bool = False,
@@ -83,17 +77,23 @@ class APIClient:
         """
         Make HTTP request.
         
-        Note: When files are provided, data should be used for form fields instead of json.
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            endpoint: API endpoint path
+            params: URL query parameters
+            json_data: JSON request body (renamed from 'json' to avoid shadowing builtin)
+            data: Form data (used when files are present)
+            files: Files to upload (multipart/form-data)
+            stream: Whether to stream the response
+            
+        Note: When files are provided, data should be used for form fields instead of json_data.
         """
-        # Exchange API key for JWT token if needed (skip for login endpoint)
         if endpoint != APIEndpoints.API_KEY_LOGIN:
             self._ensure_jwt_token()
         
         url = f"{self.api_url}{endpoint}"
 
         try:
-            # When files are present, use data for form fields (multipart/form-data)
-            # When files are not present, use json for JSON body
             if files:
                 response = self.session.request(
                     method=method,
@@ -109,7 +109,7 @@ class APIClient:
                     method=method,
                     url=url,
                     params=params,
-                    json=json,
+                    json=json_data,
                     data=data,
                     stream=stream,
                     timeout=30,
@@ -177,10 +177,8 @@ class APIClient:
 
         response = self._request("GET", APIEndpoints.ENVS, params=params)
         result = response.json()
-        # Backend returns EnvironmentListResponse with nested 'environments' array
         if isinstance(result, dict) and "environments" in result:
             return result["environments"]
-        # Fallback for backward compatibility
         return result if isinstance(result, list) else []
 
     def list_eval_benchmarks(self) -> List[Dict[str, Any]]:
@@ -192,10 +190,8 @@ class APIClient:
         """
         response = self._request("GET", APIEndpoints.ENVS_EVAL_BENCHMARKS)
         result = response.json()
-        # Backend returns EnvironmentListResponse with nested 'environments' array
         if isinstance(result, dict) and "environments" in result:
             return result["environments"]
-        # Fallback for backward compatibility
         return result if isinstance(result, list) else []
 
     def get_environment(self, env_id: str) -> Dict[str, Any]:
@@ -213,14 +209,22 @@ class APIClient:
 
         Returns:
             Path to downloaded file
+            
+        Raises:
+            APIError: If download fails
+            OSError: If file cannot be written
         """
         response = self._request("GET", APIEndpoints.env_download(env_id), stream=True)
 
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(dest_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+            with open(dest_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:  # Filter out keep-alive chunks
+                        f.write(chunk)
+        except (OSError, IOError) as e:
+            raise OSError(f"Cannot write downloaded file to {dest_path}: {e}") from e
 
         return dest_path
 
@@ -247,15 +251,12 @@ class APIClient:
         Returns:
             Upload result dictionary
         """
-        # Open bundle file
         bundle_file = open(bundle_path, "rb")
         files = {"bundle": (bundle_path.name, bundle_file, "application/zip")}
         file_handles = [bundle_file]
         
-        # Open thumbnail file with proper content type if provided
         if thumbnail:
             thumbnail_path = Path(thumbnail)
-            # Determine content type from file extension
             content_type = "image/jpeg"
             if thumbnail_path.suffix.lower() == ".png":
                 content_type = "image/png"
@@ -268,8 +269,6 @@ class APIClient:
             files["thumbnail"] = (thumbnail_path.name, thumbnail_file, content_type)
             file_handles.append(thumbnail_file)
 
-        # Backend expects form data (multipart/form-data), not JSON
-        # Convert boolean values to strings for form data
         data = {
             "category": category,
             "benchmark": str(benchmark).lower(),
@@ -289,8 +288,6 @@ class APIClient:
         response = self._request("GET", APIEndpoints.USERS_ME)
         return response.json()
 
-    # API Key Management Methods
-
     def api_key_login(self, api_key: str) -> Dict[str, Any]:
         """
         Exchange API key for JWT tokens.
@@ -302,7 +299,7 @@ class APIClient:
             Dictionary containing access_token, refresh_token, and user info
         """
         response = self._request(
-            "POST", APIEndpoints.API_KEY_LOGIN, json={"api_key": api_key}
+            "POST", APIEndpoints.API_KEY_LOGIN, json_data={"api_key": api_key}
         )
         return response.json()
 
@@ -326,7 +323,7 @@ class APIClient:
             data["name"] = name
         if expires_at:
             data["expires_at"] = expires_at.isoformat()
-        response = self._request("POST", APIEndpoints.API_KEYS, json=data)
+        response = self._request("POST", APIEndpoints.API_KEYS, json_data=data)
         return response.json()
 
     def list_api_keys(self) -> List[Dict[str, Any]]:
@@ -375,7 +372,6 @@ class APIClient:
         return response.json()
 
 
-# Global client instance
 _client_instance: Optional[APIClient] = None
 
 

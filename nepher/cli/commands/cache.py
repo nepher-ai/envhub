@@ -2,6 +2,7 @@
 
 import click
 from pathlib import Path
+from typing import Optional
 from nepher.storage.cache import get_cache_manager
 from nepher.cli.utils import print_error, print_success, print_info
 
@@ -33,7 +34,7 @@ def list():
 
 @cache.command()
 @click.argument("env_id", required=False)
-def clear(env_id: str):
+def clear(env_id: Optional[str]):
     """Clear cache (all or specific environment)."""
     try:
         cache_manager = get_cache_manager()

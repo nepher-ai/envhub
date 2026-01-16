@@ -30,10 +30,8 @@ def whoami():
         print_info("Current user:")
         click.echo(f"  Username: {user_info.get('username', 'N/A')}")
         click.echo(f"  Email: {user_info.get('email', 'N/A')}")
-        # Use envhub_role (backend returns this, not 'role')
         envhub_role = user_info.get('envhub_role') or user_info.get('role', 'N/A')
         click.echo(f"  Role: {envhub_role}")
-        # Display is_active status
         is_active = user_info.get('is_active', True)
         status_text = "Active" if is_active else "Inactive"
         if user_info.get('blocked_until'):

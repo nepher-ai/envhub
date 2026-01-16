@@ -43,8 +43,6 @@ def _store_api_key_secure(api_key: str):
         except Exception:
             pass  # Fall back to file storage
 
-    # Fallback: Store in encrypted file (simple base64 encoding for now)
-    # In production, use proper encryption
     import base64
 
     encrypted = base64.b64encode(api_key.encode()).decode()
@@ -61,7 +59,6 @@ def _get_api_key_secure() -> Optional[str]:
         except Exception:
             pass
 
-    # Fallback: Read from encrypted file
     key_file = _get_encrypted_file_path()
     if key_file.exists():
         try:
@@ -83,7 +80,6 @@ def _clear_api_key_secure():
         except Exception:
             pass
 
-    # Also clear file
     key_file = _get_encrypted_file_path()
     if key_file.exists():
         key_file.unlink()
@@ -99,14 +95,9 @@ def login(api_key: str) -> bool:
     Returns:
         True if login successful, False otherwise
     """
-    # Validate API key by exchanging it for JWT tokens
-    # The backend requires API keys to be exchanged for JWT tokens via /api/v1/auth/api-key/login
     try:
-        # Create a client without authentication to call the login endpoint
         client = APIClient(api_key=None)
-        # Exchange API key for JWT tokens (this validates the key)
         response = client.api_key_login(api_key)
-        # If successful, response contains access_token, refresh_token, and user info
         if not response or "access_token" not in response:
             return False
     except APIError:
@@ -137,7 +128,6 @@ def whoami() -> Optional[dict]:
         return None
 
     try:
-        # APIClient will automatically exchange API key for JWT token if needed
         client = APIClient(api_key=api_key)
         return client.get_user_info()
     except APIError:
@@ -151,11 +141,10 @@ def get_api_key() -> Optional[str]:
     Returns:
         API key or None if not set
     """
-    # Try secure storage first
     key = _get_api_key_secure()
     if key:
         return key
 
-    # Fall back to config
-    return get_config().get_api_key()
+    config = get_config()
+    return config.get_api_key() if config else None
 
