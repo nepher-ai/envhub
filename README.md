@@ -1,7 +1,7 @@
 # Nepher: Universal Isaac Lab Environments Platform
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 
 **Nepher** is a unified, category-agnostic Python package for managing Isaac Lab environments across all categories (navigation, manipulation, humanoid, locomotion, etc.). It provides a professional command-line interface and Python API for discovering, downloading, uploading, and managing environment bundles for Isaac Lab/Isaac Sim.
 
@@ -158,5 +158,5 @@ nepher upload ./my-env --category manipulation --thumbnail ./thumbnail.png
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Business Source License 1.1 (BUSL-1.1) - see [LICENSE](LICENSE) for details.
 
