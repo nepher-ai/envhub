@@ -31,7 +31,7 @@ class Config:
     def _load_config(self):
         """Load configuration from all sources."""
         self._config = {
-            "api_url": "http://localhost:8000",
+            "api_url": "http://localhost:8002",
             "api_key": None,
             "cache_dir": "~/.nepher/cache",
             "default_category": None,
