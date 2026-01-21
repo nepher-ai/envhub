@@ -34,7 +34,7 @@ class APIClient:
         self._jwt_token: Optional[str] = None
 
         if self.api_key:
-            if self.api_key.startswith("envhub-"):
+            if self.api_key.startswith("nepher_"):
                 self._raw_api_key = self.api_key
             else:
                 self._jwt_token = self.api_key
