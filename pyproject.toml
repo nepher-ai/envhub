@@ -55,10 +55,10 @@ isaaclab = [
 nepher = "nepher.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/your-org/envhub"
-Documentation = "https://github.com/your-org/envhub#readme"
-Repository = "https://github.com/your-org/envhub"
-Issues = "https://github.com/your-org/envhub/issues"
+Homepage = "https://github.com/nepher-ai/envhub"
+Documentation = "https://github.com/nepher-ai/envhub#readme"
+Repository = "https://github.com/nepher-ai/envhub"
+Issues = "https://github.com/nepher-ai/envhub/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

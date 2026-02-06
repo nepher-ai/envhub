@@ -43,8 +43,38 @@ Scenes are the actual simulation configurations that get loaded into Isaac Lab f
 
 ## Installation
 
+### From PyPI
+
 ```bash
 pip install nepher
+```
+
+### From Source
+
+Clone the repository and install in editable mode:
+
+```bash
+git clone https://github.com/nepher-ai/envhub.git
+cd envhub
+pip install -e .
+```
+
+#### Optional Dependencies
+
+Install with optional extras as needed:
+
+```bash
+# Development tools (pytest, black, ruff, mypy)
+pip install -e ".[dev]"
+
+# Keyring support for secure credential storage
+pip install -e ".[keyring]"
+
+# Isaac Lab integration
+pip install -e ".[isaaclab]"
+
+# All optional dependencies
+pip install -e ".[dev,keyring,isaaclab]"
 ```
 
 ## Environment and Scene Definitions

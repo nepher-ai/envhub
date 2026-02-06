@@ -30,9 +30,7 @@ def test_cache_dir_resolution():
 
 def test_config_priority():
     """Test configuration priority (env var overrides config file)."""
-    # This would require mocking, simplified for now
     config = Config()
-    # Environment variables should override config file
     if os.getenv("NEPHER_CACHE_DIR"):
         assert config.get("cache_dir") == os.getenv("NEPHER_CACHE_DIR")
 
