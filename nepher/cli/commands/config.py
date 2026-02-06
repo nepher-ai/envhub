@@ -1,5 +1,7 @@
 """Configuration management commands."""
 
+from typing import Any
+
 import click
 from nepher.config import get_config, set_config
 from nepher.cli.utils import print_error, print_success, print_info
@@ -11,16 +13,29 @@ def config():
     pass
 
 
+def _mask_secret(key: str, value: Any) -> Any:
+    """Mask secret keys so they are never echoed in full."""
+    if value is None or not isinstance(value, str):
+        return value
+    lower = key.lower()
+    if "api_key" in lower or "secret" in lower or "password" in lower or "token" in lower:
+        if len(value) < 8:
+            return "***"
+        return f"{value[:4]}...{value[-4:]}"
+    return value
+
+
 @config.command()
 @click.argument("key")
 def get(key: str):
-    """Get configuration value."""
+    """Get configuration value (secrets are masked)."""
     try:
         value = get_config().get(key)
         if value is None:
             print_error(f"Configuration key '{key}' not found.")
         else:
-            click.echo(value)
+            display = _mask_secret(key, value)
+            click.echo(display)
 
     except Exception as e:
         print_error(f"Failed to get config: {str(e)}")
@@ -40,7 +55,8 @@ def set(key: str, value: str):
             value = float(value)
 
         set_config(key, value, save=True)
-        print_success(f"Set {key} = {value}")
+        display = _mask_secret(key, value) if isinstance(value, str) else value
+        print_success(f"Set {key} = {display}")
 
     except Exception as e:
         print_error(f"Failed to set config: {str(e)}")

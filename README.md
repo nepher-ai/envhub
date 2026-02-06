@@ -117,8 +117,9 @@ from isaaclab.envs import ManagerBasedRLEnv
 ## Quick Start
 
 ```bash
-# Authenticate with your API key
-nepher login <api_key>
+# Authenticate with your API key (you will be prompted; key is not shown or stored in shell history)
+nepher login
+# Or pass the key explicitly: nepher login --api-key <api_key>
 
 # Check current authentication status
 nepher whoami
