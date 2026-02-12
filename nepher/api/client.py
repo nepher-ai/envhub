@@ -59,10 +59,24 @@ class APIClient:
                 self._jwt_token = login_data.get("access_token")
                 if self._jwt_token:
                     self.session.headers.update({"Authorization": f"Bearer {self._jwt_token}"})
-            except Exception:
+            except requests.exceptions.HTTPError as e:
                 if original_auth:
                     self.session.headers.update({"Authorization": original_auth})
-                raise
+                error_msg = "API key authentication failed"
+                if e.response is not None:
+                    try:
+                        error_data = e.response.json()
+                        error_msg = error_data.get("message", error_data.get("detail", error_msg))
+                    except (ValueError, KeyError):
+                        if e.response.status_code == 401:
+                            error_msg = "Invalid or expired API key. Please login again with 'nepher login'."
+                        else:
+                            error_msg = e.response.text or error_msg
+                raise APIError(error_msg) from e
+            except requests.exceptions.RequestException as e:
+                if original_auth:
+                    self.session.headers.update({"Authorization": original_auth})
+                raise APIError(f"API key login request failed: {str(e)}") from e
 
     def _request(
         self,

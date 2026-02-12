@@ -31,7 +31,7 @@ class Config:
     def _load_config(self):
         """Load configuration from all sources."""
         self._config = {
-            "api_url": "https://envhub.nepher.ai",
+            "api_url": "https://envhub-api.nepher.ai",
             "api_key": None,
             "cache_dir": "~/.nepher/cache",
             "default_category": None,
