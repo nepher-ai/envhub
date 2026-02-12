@@ -55,8 +55,8 @@ class Config:
             except Exception:
                 pass
 
-        if os.getenv("NEPHER_API_URL"):
-            self._config["api_url"] = os.getenv("NEPHER_API_URL")
+        if os.getenv("ENVHUB_API_URL"):
+            self._config["api_url"] = os.getenv("ENVHUB_API_URL")
         if os.getenv("NEPHER_API_KEY"):
             self._config["api_key"] = os.getenv("NEPHER_API_KEY")
         if os.getenv("NEPHER_CACHE_DIR"):
