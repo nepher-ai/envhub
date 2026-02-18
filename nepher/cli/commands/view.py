@@ -230,9 +230,9 @@ def _setup_app_launcher():
 
 @click.command()
 @click.argument("env_id")
-@click.option("--category", required=True, help="Environment category")
+@click.option("--category", default=None, help="Environment category (optional, resolved from manifest)")
 @click.option("--scene", help="Scene name or index")
-def view(env_id: str, category: str, scene: Optional[str]):
+def view(env_id: str, category: Optional[str], scene: Optional[str]):
     """View environment in Isaac Sim (requires isaaclab)."""
     simulation_app = None
     try:
