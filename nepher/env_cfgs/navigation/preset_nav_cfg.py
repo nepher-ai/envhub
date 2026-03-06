@@ -22,7 +22,7 @@ import torch
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg
-from isaaclab.terrains import TerrainImporterCfg
+from isaaclab.terrains import TerrainGeneratorCfg, TerrainImporterCfg
 from isaaclab.utils import configclass
 
 from nepher.env_cfgs.navigation.abstract_nav_cfg import AbstractNavigationEnvCfg
@@ -112,7 +112,7 @@ class PresetNavigationEnvCfg(AbstractNavigationEnvCfg):
     
     # Terrain configuration
     terrain_type: str = "plane"
-    """Type of terrain: 'plane' for flat terrain, 'generator' for generated terrain."""
+    """Type of terrain: 'plane' for flat terrain, 'generator' for procedurally generated terrain."""
     
     terrain_friction: float = 1.0
     """Static and dynamic friction coefficient for terrain."""
@@ -122,6 +122,15 @@ class PresetNavigationEnvCfg(AbstractNavigationEnvCfg):
     
     terrain_usd_path: str | None = None
     """Path to USD file for terrain mesh. If None, uses terrain_type."""
+    
+    terrain_generator: TerrainGeneratorCfg | None = None
+    """Procedural terrain generator config. Used when terrain_type='generator'."""
+    
+    terrain_max_init_level: int | None = None
+    """Maximum initial terrain difficulty level for curriculum-based terrain."""
+    
+    terrain_visual_material: sim_utils.VisualMaterialCfg | None = None
+    """Optional visual material for generated terrain (e.g. MdlFileCfg for tile textures)."""
     
     env_spacing: float = 20.0
     """Environment spacing for grid-like origins (meters). Used for multi-environment layouts."""
@@ -178,14 +187,18 @@ class PresetNavigationEnvCfg(AbstractNavigationEnvCfg):
     # ========== Abstract Method Implementations ==========
     
     def get_terrain_cfg(self) -> TerrainImporterCfg:
-        """Generate terrain configuration."""
-        return TerrainImporterCfg(
+        """Generate terrain configuration.
+        
+        Supports plane, USD, and procedurally generated terrain. When terrain_type
+        is 'generator', terrain_generator must be set to a valid TerrainGeneratorCfg.
+        """
+        cfg = TerrainImporterCfg(
             prim_path="/World/ground",
             terrain_type=self.terrain_type,
-            terrain_generator=None,
+            terrain_generator=self.terrain_generator,
             usd_path=self.terrain_usd_path,
             env_spacing=self.env_spacing,
-            max_init_terrain_level=None,
+            max_init_terrain_level=self.terrain_max_init_level,
             collision_group=-1,
             physics_material=sim_utils.RigidBodyMaterialCfg(
                 friction_combine_mode="multiply",
@@ -196,6 +209,9 @@ class PresetNavigationEnvCfg(AbstractNavigationEnvCfg):
             ),
             debug_vis=False,
         )
+        if self.terrain_visual_material is not None:
+            cfg.visual_material = self.terrain_visual_material
+        return cfg
     
     def get_obstacle_cfgs(self) -> dict[str, AssetBaseCfg]:
         """Generate obstacle asset configurations.
