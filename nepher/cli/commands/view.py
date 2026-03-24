@@ -191,6 +191,23 @@ def _spawn_preset_scene(scene_cfg):
         print_success("Added default sky light")
 
 
+def _compute_preset_camera(scene_cfg):
+    """Compute camera target and eye position from scene playground bounds."""
+    playground = getattr(scene_cfg, 'playground', None)
+    if playground and len(playground) == 4:
+        cx = (playground[0] + playground[2]) / 2.0
+        cy = (playground[1] + playground[3]) / 2.0
+        dx = playground[2] - playground[0]
+        dy = playground[3] - playground[1]
+        span = max(dx, dy, 6.0)
+        target = [cx, cy, 0.0]
+        eye = [cx + span * 0.8, cy + span * 0.8, span * 0.6]
+    else:
+        target = [0.0, 0.0, 0.0]
+        eye = [15.0, 15.0, 12.0]
+    return target, eye
+
+
 def _setup_app_launcher():
     """Set up AppLauncher and return the simulation app.
     
@@ -258,7 +275,8 @@ def view(env_id: str, category: Optional[str], scene: Optional[str]):
             else:
                 sim = SimulationContext(sim_cfg)
                 _spawn_preset_scene(scene_cfg)
-                sim.set_camera_view(eye=[15.0, 15.0, 12.0], target=[0.0, 0.0, 0.0])
+                cam_target, cam_eye = _compute_preset_camera(scene_cfg)
+                sim.set_camera_view(eye=cam_eye, target=cam_target)
             
             sim.reset()
             

@@ -2,6 +2,7 @@
 Loader registry and convenience functions.
 """
 
+from pathlib import Path
 from typing import Optional, Union
 from nepher.core import Environment
 from nepher.storage.cache import get_cache_manager
@@ -11,9 +12,23 @@ from nepher.loader.usd_loader import UsdLoader
 from nepher.loader.preset_loader import PresetLoader
 
 
+def _find_bundled_env(env_id: str) -> Optional[Path]:
+    """Search for a bundled environment in the repo's environments/ directory."""
+    pkg_dir = Path(__file__).resolve().parent.parent
+    for candidate in [pkg_dir.parent / "environments" / env_id]:
+        manifest = candidate / "manifest.yaml"
+        if manifest.is_file():
+            return manifest
+    return None
+
+
 def load_env(env_id: str, category: Optional[str] = None) -> Environment:
     """
-    Load environment from cache or download if needed.
+    Load environment from cache or bundled environments directory.
+
+    Checks the configured cache first, then falls back to the repo-bundled
+    ``environments/`` directory so that locally developed environments are
+    viewable without a download step.
 
     Args:
         env_id: Environment ID
@@ -23,14 +38,18 @@ def load_env(env_id: str, category: Optional[str] = None) -> Environment:
         Environment object
     """
     cache_manager = get_cache_manager(category=category)
-    cache_path = cache_manager.get_env_cache_path(env_id)
 
     if cache_manager.is_cached(env_id):
-        manifest_path = cache_path / "manifest.yaml"
+        manifest_path = cache_manager.get_env_cache_path(env_id) / "manifest.yaml"
         return ManifestParser.parse(manifest_path)
 
+    bundled = _find_bundled_env(env_id)
+    if bundled is not None:
+        return ManifestParser.parse(bundled)
+
     raise FileNotFoundError(
-        f"Environment {env_id} not found in cache. Use 'nepher download {env_id}' first."
+        f"Environment {env_id} not found in cache or bundled environments. "
+        f"Use 'nepher download {env_id}' first."
     )
 
 
