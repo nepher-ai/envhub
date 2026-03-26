@@ -1,12 +1,20 @@
-"""Utility functions for the Nepher platform."""
+"""Utility functions and strategies for the Nepher platform."""
 
-from nepher.utils.free_zone_finder import FreeZone, Rectangle, find_free_zones
 from nepher.utils.fast_spawn_sampler import FastSpawnSampler, OccupancyMapConfig
+from nepher.utils.strategies import (
+    CompositeStrategy,
+    OccupancySamplerStrategy,
+    PositionStrategy,
+    PrebakedPairStrategy,
+    UniformBoxStrategy,
+)
 
 __all__ = [
-    "FreeZone",
-    "Rectangle", 
-    "find_free_zones",
+    "CompositeStrategy",
     "FastSpawnSampler",
     "OccupancyMapConfig",
+    "OccupancySamplerStrategy",
+    "PositionStrategy",
+    "PrebakedPairStrategy",
+    "UniformBoxStrategy",
 ]

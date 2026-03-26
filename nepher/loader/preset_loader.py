@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 from nepher.core import Environment
 from nepher.loader.base import BaseLoader
+from nepher.env_cfgs.base import BaseEnvCfg
 from nepher.env_cfgs.registry import get_config_class
 
 
@@ -44,15 +45,37 @@ def load_preset_module(preset_path: str, base_path: Optional[Path] = None):
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
-        
+
+        # Only classes *defined in this file* (not imports like AssetBaseCfg or
+        # PresetNavigationEnvCfg) and subclasses of BaseEnvCfg are env presets.
+        candidates: list[type] = []
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
-            if (isinstance(attr, type) and 
-                (attr_name.endswith("Cfg") or attr_name.endswith("PresetCfg")) and
-                attr_name != "PresetNavigationEnvCfg"):
-                return attr
-        
-        raise ValueError(f"No preset config class found in {file_path}")
+            if not isinstance(attr, type):
+                continue
+            if not (attr_name.endswith("Cfg") or attr_name.endswith("PresetCfg")):
+                continue
+            if getattr(attr, "__module__", None) != module.__name__:
+                continue
+            try:
+                if issubclass(attr, BaseEnvCfg) and attr is not BaseEnvCfg:
+                    candidates.append(attr)
+            except TypeError:
+                continue
+
+        if not candidates:
+            raise ValueError(
+                f"No preset config class found in {file_path}. "
+                "Define a subclass of BaseEnvCfg in this file (imports like "
+                "AssetBaseCfg are ignored)."
+            )
+        if len(candidates) > 1:
+            # Prefer the most specific subclass (deepest in inheritance).
+            candidates.sort(
+                key=lambda c: len(c.__mro__),
+                reverse=True,
+            )
+        return candidates[0]
     else:
         parts = preset_path.split(".")
         module_path = ".".join(parts[:-1])
