@@ -14,6 +14,8 @@ def get_config_class(category: str, type: str) -> Type[BaseEnvCfg]:
         try:
             if category == "navigation":
                 import nepher.env_cfgs.navigation  # noqa: F401
+            elif category == "manipulation":
+                import nepher.env_cfgs.manipulation  # noqa: F401
         except ImportError:
             pass
         
