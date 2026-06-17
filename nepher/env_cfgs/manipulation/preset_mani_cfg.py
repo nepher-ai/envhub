@@ -295,9 +295,18 @@ class PresetManipulationEnvCfg(AbstractManipulationEnvCfg):
             physics_material=physics_material,
         )
 
+        def _make_usd_cfg(**kwargs) -> sim_utils.UsdFileCfg:
+            try:
+                return sim_utils.UsdFileCfg(**kwargs)
+            except TypeError:
+                # Older IsaacLab versions do not support physics_material on
+                # UsdFileCfg; drop it and retry.
+                kwargs.pop("physics_material", None)
+                return sim_utils.UsdFileCfg(**kwargs)
+
         if obj.physics_type in ("rigid", "deformable"):
             usd_kwargs["rigid_props"] = rigid_props
-            spawn_cfg = sim_utils.UsdFileCfg(**usd_kwargs)
+            spawn_cfg = _make_usd_cfg(**usd_kwargs)
             return RigidObjectCfg(
                 prim_path=prim_path,
                 spawn=spawn_cfg,
@@ -309,7 +318,7 @@ class PresetManipulationEnvCfg(AbstractManipulationEnvCfg):
 
         if obj.physics_type == "articulated":
             usd_kwargs.pop("rigid_props", None)
-            spawn_cfg = sim_utils.UsdFileCfg(**usd_kwargs)
+            spawn_cfg = _make_usd_cfg(**usd_kwargs)
             return ArticulationCfg(
                 prim_path=prim_path,
                 spawn=spawn_cfg,
