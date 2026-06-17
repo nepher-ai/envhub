@@ -67,9 +67,6 @@ class ManipulationObjectCfg:
     init_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
     """Default initial quaternion (w, x, y, z)."""
 
-    mass: float | None = None
-    """Override mass in kg; ``None`` = keep USD physics default."""
-
     material_path: str | None = None
     """Optional physics material USD path."""
 
@@ -279,11 +276,23 @@ class PresetManipulationEnvCfg(AbstractManipulationEnvCfg):
             disable_gravity=obj.disable_gravity,
         )
         collision_props = CollisionPropertiesCfg(collision_enabled=True)
+        # Zero restitution so objects settle without bouncing when dropped into
+        # a container, matching real-world behaviour.  friction_combine_mode
+        # "multiply" with 1.0 leaves the USD's own friction unchanged (1.0 × f
+        # = f), so grasping is unaffected regardless of the asset's material.
+        physics_material = sim_utils.RigidBodyMaterialCfg(
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            restitution=0.0,
+            friction_combine_mode="multiply",
+            restitution_combine_mode="min",
+        )
 
         usd_kwargs: dict = dict(
             usd_path=obj.usd_path,
             scale=obj.scale,
             collision_props=collision_props,
+            physics_material=physics_material,
         )
 
         if obj.physics_type in ("rigid", "deformable"):
