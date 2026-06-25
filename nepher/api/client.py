@@ -32,19 +32,30 @@ class APIClient:
         self.api_key = api_key or config.get_api_key()
         self.session = requests.Session()
         self._jwt_token: Optional[str] = None
+        self._raw_api_key: Optional[str] = None
 
         if self.api_key:
             if self.api_key.startswith("nepher_"):
+                # Send the API key directly via X-API-Key. The backend verifies
+                # it against account-backend on every request, so authentication
+                # never depends on a short-lived JWT — long-running validator
+                # downloads keep working even after an access token would expire.
                 self._raw_api_key = self.api_key
+                self.session.headers.update({"X-API-Key": self._raw_api_key})
             else:
+                # Treat a non-prefixed value as a pre-issued JWT bearer token.
                 self._jwt_token = self.api_key
-                self._raw_api_key = None
                 self.session.headers.update({"Authorization": f"Bearer {self._jwt_token}"})
-        else:
-            self._raw_api_key = None
 
     def _ensure_jwt_token(self):
-        """Exchange API key for JWT token if needed."""
+        """Exchange API key for a JWT token (legacy fallback).
+
+        Only used when the API key is *not* sent directly via X-API-Key (e.g.
+        if a future backend requires a bearer token). When X-API-Key is set we
+        skip this entirely so requests never depend on an expiring JWT.
+        """
+        if "X-API-Key" in self.session.headers:
+            return
         if self._raw_api_key and not self._jwt_token:
             original_auth = self.session.headers.get("Authorization")
             self.session.headers.pop("Authorization", None)

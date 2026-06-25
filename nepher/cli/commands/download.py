@@ -14,10 +14,17 @@ from nepher.cli.utils import print_error, print_success, print_info
 @click.option("--category", default=None, help="Environment category (optional, resolved automatically)")
 @click.option("--cache-dir", type=click.Path(), help="Override cache directory")
 @click.option("--force", is_flag=True, help="Force re-download")
-def download(env_id: str, category: Optional[str], cache_dir: Optional[str], force: bool):
+@click.option(
+    "--api-key",
+    default=None,
+    envvar="NEPHER_API_KEY",
+    help="API key for authentication. Sent directly so downloads succeed "
+    "regardless of any access-token expiry.",
+)
+def download(env_id: str, category: Optional[str], cache_dir: Optional[str], force: bool, api_key: Optional[str]):
     """Download an environment."""
     try:
-        client = get_client()
+        client = get_client(api_key=api_key) if api_key else get_client()
 
         actual_env_id = env_id
         resolved_category = category
