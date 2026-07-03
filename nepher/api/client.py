@@ -2,12 +2,15 @@
 Category-agnostic API client for envhub-backend.
 """
 
+import logging
 import requests
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from nepher.config import get_config
 from nepher.api.endpoints import APIEndpoints
+
+logger = logging.getLogger(__name__)
 
 
 class APIError(Exception):
@@ -401,9 +404,39 @@ _client_instance: Optional[APIClient] = None
 
 
 def get_client(api_url: Optional[str] = None, api_key: Optional[str] = None) -> APIClient:
-    """Get global API client instance."""
+    """Get the global API client instance.
+
+    Long-running processes (e.g. validators) call this repeatedly, often with
+    an explicit ``api_key`` resolved fresh from disk/env on every call. If we
+    blindly returned the first-ever-constructed instance forever, a client
+    built once with a bad/stale credential (e.g. a short-lived JWT instead of
+    a proper ``nepher_`` API key) would keep using it for the lifetime of the
+    process — even after the caller starts passing the correct key — because
+    the cached instance's auth headers were fixed at construction time and
+    never re-evaluated. See: intermittent "Token has expired" failures during
+    long validator runs even with a correctly configured API key.
+
+    To make this self-healing, the cached client is rebuilt whenever the
+    caller explicitly passes an ``api_key``/``api_url`` that differs from
+    what the cached instance is currently using. Callers that omit both
+    arguments (e.g. CLI commands relying on stored login state) keep reusing
+    the existing cached instance as before.
+    """
     global _client_instance
+
     if _client_instance is None:
         _client_instance = APIClient(api_url=api_url, api_key=api_key)
+        return _client_instance
+
+    if api_key is not None and api_key != _client_instance.api_key:
+        logger.info("EnvHub API client credentials changed — rebuilding client")
+        _client_instance = APIClient(api_url=api_url, api_key=api_key)
+        return _client_instance
+
+    if api_url is not None and api_url.rstrip("/") != _client_instance.api_url:
+        logger.info("EnvHub API client URL changed — rebuilding client")
+        _client_instance = APIClient(api_url=api_url, api_key=api_key)
+        return _client_instance
+
     return _client_instance
 
