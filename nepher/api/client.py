@@ -75,8 +75,15 @@ class APIClient:
         files: Optional[Dict[str, Any]] = None,
         stream: bool = False,
         timeout: Any = DEFAULT_TIMEOUT,
+        explain_401: bool = True,
     ) -> requests.Response:
-        """Make an HTTP request and raise APIError on failure."""
+        """Make an HTTP request and raise APIError on failure.
+
+        Args:
+            explain_401: When True, append a login hint to 401 responses.
+                Login validation turns this off so the hint does not tell
+                the user to run the command they are already running.
+        """
         url = f"{self.api_url}{endpoint}"
         try:
             response = self.session.request(
@@ -94,7 +101,7 @@ class APIClient:
 
         if response.status_code >= 400:
             message = _error_message(response, f"HTTP {response.status_code}")
-            if response.status_code == 401:
+            if response.status_code == 401 and explain_401:
                 message = f"{message} (run 'nepher login' or set NEPHER_API_KEY)"
             response.close()
             raise APIError(message, status_code=response.status_code)
@@ -239,9 +246,34 @@ class APIClient:
                 )
         return response.json()
 
-    def get_user_info(self) -> Dict[str, Any]:
-        """Get current user information."""
-        return self._request("GET", APIEndpoints.USERS_ME).json()
+    def api_key_login(self, api_key: str) -> Dict[str, Any]:
+        """Validate an API key and return the session payload.
+
+        The key is sent in the JSON body. ``GET /api/v1/users/me`` does not
+        accept that key as ``X-API-Key``; environment routes do.
+
+        Args:
+            api_key: Nepher API key (``nepher_...``)
+
+        Returns:
+            Login payload with ``access_token`` and ``user``
+        """
+        return self._request(
+            "POST",
+            APIEndpoints.API_KEY_LOGIN,
+            json_data={"api_key": api_key},
+            explain_401=False,
+        ).json()
+
+    def get_user_info(self, *, explain_401: bool = True) -> Dict[str, Any]:
+        """Get current user information.
+
+        Args:
+            explain_401: When False, a 401 is returned as the server's own
+                message. ``nepher login`` uses that so it can show the reason
+                the key was rejected.
+        """
+        return self._request("GET", APIEndpoints.USERS_ME, explain_401=explain_401).json()
 
 
 _client_instance: Optional[APIClient] = None

@@ -6,6 +6,7 @@ import zipfile
 from click.testing import CliRunner
 
 from nepher.api.client import APIError
+from nepher.api.endpoints import APIEndpoints
 from nepher.cli.main import main
 
 
@@ -82,6 +83,42 @@ def test_download_rejects_unsafe_server_id(monkeypatch, tmp_path):
 def test_login_rejects_bad_prefix():
     result = CliRunner().invoke(main, ["login", "--api-key", "not-a-key"])
     assert result.exit_code == 1
+    assert "nepher_" in result.output
+
+
+def test_login_reports_server_error(monkeypatch):
+    class RejectingClient:
+        def __init__(self, api_key):
+            self.api_url = "https://api.nepher.ai/envhub"
+
+        def api_key_login(self, api_key):
+            raise APIError("Invalid API key", status_code=401)
+
+    monkeypatch.setattr("nepher.auth.APIClient", RejectingClient)
+    result = CliRunner().invoke(main, ["login", "--api-key", "nepher_test"])
+    assert result.exit_code == 1
+    assert "Invalid API key" in result.output
+    assert "https://api.nepher.ai/envhub/api/v1/auth/api-key/login" in result.output
+    assert "Login failed" not in result.output
+
+
+def test_login_stores_key_when_api_accepts_it(monkeypatch, isolated_home):
+    class AcceptingClient:
+        def __init__(self, api_key):
+            self.api_url = "https://api.nepher.ai/envhub"
+
+        def api_key_login(self, api_key):
+            return {"access_token": "token", "user": {"fullname": "Ada"}}
+
+    monkeypatch.setattr("nepher.auth.APIClient", AcceptingClient)
+    result = CliRunner().invoke(main, ["login", "--api-key", "nepher_test"])
+    assert result.exit_code == 0, result.output
+    assert "Login successful" in result.output
+    assert (isolated_home / ".nepher" / "api_key").read_text(encoding="utf-8") == "nepher_test"
+
+
+def test_health_endpoint_is_root_health():
+    assert APIEndpoints.HEALTH == "/health"
 
 
 def test_config_set_api_key_is_refused():

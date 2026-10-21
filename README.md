@@ -73,6 +73,8 @@ nepher login --api-key nepher_… # non-interactive (key ends up in shell histor
 nepher logout
 ```
 
+`nepher login` stores the key only after `POST /api/v1/auth/api-key/login` succeeds. A rejected key or a connection failure prints the server or network error, including the URL that was called. Environment requests keep using the API key as `X-API-Key`.
+
 Requests use the first key found in this order:
 
 1. `--api-key` on the command (where supported) or the `NEPHER_API_KEY` environment variable

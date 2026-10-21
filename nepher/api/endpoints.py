@@ -8,8 +8,8 @@ from typing import Optional
 class APIEndpoints:
     """API endpoint paths."""
 
-    # Health & Info
-    HEALTH = "/api/v1/health"
+    # Health & Info. The live API publishes health at ``/health``, not under ``/api/v1``.
+    HEALTH = "/health"
     INFO = "/"  # Root endpoint for API info
 
     # Environment Management
@@ -64,6 +64,10 @@ class APIEndpoints:
     def env_restore(env_id: str) -> str:
         """Restore environment endpoint."""
         return f"/api/v1/envs/{env_id}/restore"
+
+    # API keys are checked here. GET /users/me accepts the Bearer token from this
+    # response, and rejects the same key sent as X-API-Key.
+    API_KEY_LOGIN = "/api/v1/auth/api-key/login"
 
     # User Management (API keys are managed by the account service: `npcli account api-keys`)
     USERS_ME = "/api/v1/users/me"
