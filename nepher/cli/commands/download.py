@@ -2,11 +2,29 @@
 
 from pathlib import Path
 from typing import Optional
+
 import click
-from nepher.api.client import get_client
-from nepher.storage.cache import get_cache_manager
+
+from nepher.api.client import APIClient, APIError, get_client
+from nepher.cli.utils import print_error, print_info, print_success
 from nepher.storage.bundle import BundleManager
-from nepher.cli.utils import print_error, print_success, print_info
+from nepher.storage.cache import get_cache_manager
+from nepher.storage.paths import safe_env_id
+
+
+def _resolve_by_name(client: APIClient, name: str, category: Optional[str]) -> Optional[dict]:
+    """Find an environment whose ID or name matches ``name`` exactly (newest wins)."""
+    envs = client.list_environments(category=category, search=name, limit=50)
+    matches = [e for e in envs if name in (e.get("id"), e.get("original_name"), e.get("name"))]
+    if not matches:
+        suggestions = [e.get("id") for e in envs if e.get("id")][:5]
+        if suggestions:
+            print_info("Did you mean: " + ", ".join(suggestions))
+        return None
+    if len(matches) > 1:
+        matches.sort(key=lambda e: e.get("uploaded_at") or "", reverse=True)
+        print_info(f"Found {len(matches)} environments named '{name}', using most recent: {matches[0].get('id')}")
+    return matches[0]
 
 
 @click.command()
@@ -22,67 +40,51 @@ from nepher.cli.utils import print_error, print_success, print_info
     "regardless of any access-token expiry.",
 )
 def download(env_id: str, category: Optional[str], cache_dir: Optional[str], force: bool, api_key: Optional[str]):
-    """Download an environment."""
+    """Download an environment by ID or exact name."""
     try:
-        client = get_client(api_key=api_key) if api_key else get_client()
+        client = get_client(api_key=api_key)
 
-        actual_env_id = env_id
-        resolved_category = category
         try:
             env_info = client.get_environment(env_id)
-            actual_env_id = env_info.get("id", env_id)
-            if not resolved_category:
-                resolved_category = env_info.get("category")
-        except Exception:
-            print_info(f"Searching for environment matching '{env_id}'...")
-            envs = client.list_environments(category=category, search=env_id, limit=10)
-            
-            matches = [e for e in envs if e.get("original_name") == env_id]
-            
-            if not matches:
-                matches = [e for e in envs if env_id.lower() in e.get("original_name", "").lower()]
-            
-            if not matches:
+        except APIError as e:
+            if e.status_code != 404:
+                raise
+            print_info(f"No environment with ID '{env_id}', searching by name...")
+            env_info = _resolve_by_name(client, env_id, category)
+            if env_info is None:
                 msg = f"Environment '{env_id}' not found"
                 if category:
                     msg += f" in category '{category}'"
                 print_error(msg)
                 print_info("Use 'nepher list' to see available environments")
-                return
-            
-            if len(matches) > 1:
-                matches.sort(key=lambda x: x.get("uploaded_at", ""), reverse=True)
-                print_info(f"Found {len(matches)} matches, using most recent: {matches[0].get('id')}")
-            
-            actual_env_id = matches[0].get("id")
-            if not resolved_category:
-                resolved_category = matches[0].get("category")
-            if not actual_env_id:
-                print_error(f"Could not determine environment ID for '{env_id}'")
-                return
+                raise SystemExit(1)
+
+        actual_env_id = safe_env_id(str(env_info.get("id") or env_id))
+        resolved_category = category or env_info.get("category")
 
         cache_manager = get_cache_manager(
             cache_dir=Path(cache_dir) if cache_dir else None, category=resolved_category
         )
 
         if cache_manager.is_cached(actual_env_id) and not force:
-            print_info(f"Environment {actual_env_id} is already cached.")
+            print_info(f"Environment {actual_env_id} is already cached at {cache_manager.get_env_cache_path(actual_env_id)}")
             return
 
         print_info(f"Downloading {actual_env_id}...")
-
         cache_path = cache_manager.get_env_cache_path(actual_env_id)
-        zip_path = cache_path.parent / f"{actual_env_id}.zip"
+        zip_path = cache_path.parent / f".{actual_env_id}.zip"
 
-        client.download_environment(actual_env_id, zip_path)
+        try:
+            client.download_environment(actual_env_id, zip_path)
+            print_info("Extracting bundle...")
+            BundleManager.extract_bundle(zip_path, cache_path)
+        finally:
+            zip_path.unlink(missing_ok=True)
 
-        print_info("Extracting bundle...")
-        BundleManager.extract_bundle(zip_path, cache_path)
+        print_success(f"Environment {actual_env_id} downloaded and cached at {cache_path}")
 
-        zip_path.unlink()
-
-        print_success(f"Environment {actual_env_id} downloaded and cached successfully!")
-
+    except SystemExit:
+        raise
     except Exception as e:
-        print_error(f"Failed to download environment: {str(e)}")
-
+        print_error(f"Failed to download environment: {e}")
+        raise SystemExit(1)

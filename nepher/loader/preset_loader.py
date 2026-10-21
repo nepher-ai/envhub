@@ -2,6 +2,8 @@
 Preset environment loader.
 """
 
+import hashlib
+import importlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -9,34 +11,38 @@ from typing import Optional
 from nepher.core import Environment
 from nepher.loader.base import BaseLoader
 from nepher.env_cfgs.base import BaseEnvCfg
-from nepher.env_cfgs.registry import get_config_class
+from nepher.storage.paths import resolve_within
 
 
 def load_preset_module(preset_path: str, base_path: Optional[Path] = None):
     """Load preset module from path.
-    
+
+    Preset files are executed as Python, so only load bundles you trust.
+    When ``base_path`` is given (a bundle directory), the file must live inside it.
+
     Args:
         preset_path: Path to preset file (e.g., "my_preset.py") or module path
         base_path: Base directory for resolving relative file paths
-    
+
     Returns:
         Preset config class
-        
+
     Raises:
         FileNotFoundError: If preset file is not found
         ImportError: If preset module cannot be loaded
-        ValueError: If no preset config class is found
+        ValueError: If no preset config class is found or the path escapes the bundle
     """
     if preset_path.endswith(".py"):
         if base_path:
-            file_path = base_path / preset_path
+            file_path = resolve_within(Path(base_path), preset_path)
         else:
-            file_path = Path(preset_path)
-        
-        if not file_path.exists():
+            file_path = Path(preset_path).resolve()
+
+        if not file_path.is_file():
             raise FileNotFoundError(f"Preset file not found: {file_path}")
-        
-        module_name = f"nepher_preset_{file_path.stem}_{id(file_path)}"
+
+        digest = hashlib.sha1(str(file_path).encode("utf-8")).hexdigest()[:12]
+        module_name = f"nepher_preset_{file_path.stem}_{digest}"
         
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         if spec is None or spec.loader is None:
@@ -44,7 +50,11 @@ def load_preset_module(preset_path: str, base_path: Optional[Path] = None):
         
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
-        spec.loader.exec_module(module)
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(module_name, None)
+            raise
 
         # Only classes *defined in this file* (not imports like AssetBaseCfg or
         # PresetNavigationEnvCfg) and subclasses of BaseEnvCfg are env presets.

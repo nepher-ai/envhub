@@ -15,6 +15,7 @@ from nepher.cli.utils import print_error, print_info
 @click.option("--search", help="Search query")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--limit", type=int, help="Maximum number of results")
+@click.option("--api-key", default=None, envvar="NEPHER_API_KEY", help="API key (defaults to stored credentials)")
 def list_cmd(
     category: Optional[str],
     type: Optional[str],
@@ -23,10 +24,11 @@ def list_cmd(
     search: Optional[str],
     output_json: bool,
     limit: Optional[int],
+    api_key: Optional[str],
 ):
     """List available environments."""
     try:
-        client = get_client()
+        client = get_client(api_key=api_key)
         
         if eval_benchmarks:
             envs = client.list_eval_benchmarks()
@@ -71,5 +73,6 @@ def list_cmd(
                 click.echo()
 
     except Exception as e:
-        print_error(f"Failed to list environments: {str(e)}")
+        print_error(f"Failed to list environments: {e}")
+        raise SystemExit(1)
 

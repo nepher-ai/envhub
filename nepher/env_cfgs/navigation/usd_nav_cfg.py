@@ -13,6 +13,7 @@ auto-wired in ``__post_init__`` from spawn-area / occupancy-map config.
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 
 import isaaclab.sim as sim_utils
@@ -22,6 +23,7 @@ from isaaclab.utils import configclass
 
 from nepher.env_cfgs.navigation.abstract_nav_cfg import AbstractNavigationEnvCfg
 from nepher.utils.fast_spawn_sampler import OccupancyMapConfig
+from nepher.utils.strategies.composite import CompositeStrategy
 from nepher.utils.strategies.occupancy_sampler import OccupancySamplerStrategy
 
 
@@ -141,7 +143,12 @@ class UsdNavigationEnvCfg(AbstractNavigationEnvCfg):
     # ========== Occupancy Sampler ==========
 
     occupancy_map_yaml: str | None = None
-    """ROS-style occupancy-map YAML for collision-free sampling."""
+    """ROS-style occupancy-map YAML for collision-free sampling.
+    When set, it defines where robots can spawn; ``spawn_areas`` and ``exclusion_zones`` are not applied."""
+
+    occupancy_map_offset: tuple[float, float, float] | None = None
+    """Optional ``(x, y, yaw)`` applied to occupancy-map coordinates when the
+    map frame does not match the USD scene origin."""
 
     spawn_grid_resolution: float = 0.1
 
@@ -156,32 +163,35 @@ class UsdNavigationEnvCfg(AbstractNavigationEnvCfg):
     # ========== Auto-wire strategy ==========
 
     def __post_init__(self):
-        omap_cfg = None
-        if self.occupancy_map_yaml:
-            omap_cfg = OccupancyMapConfig(
-                yaml_path=self.occupancy_map_yaml,
-                safety_margin=self.robot_safety_margin,
-            )
-
-        spawn_bounds = None
-        if self.spawn_areas:
-            spawn_bounds = (
-                min(a.x_min for a in self.spawn_areas),
-                min(a.y_min for a in self.spawn_areas),
-                max(a.x_max for a in self.spawn_areas),
-                max(a.y_max for a in self.spawn_areas),
-            )
-
         exclusions = [(z.x_min, z.y_min, z.x_max, z.y_max) for z in self.exclusion_zones]
 
-        self.position_strategy = OccupancySamplerStrategy(
-            omap_config=omap_cfg,
-            spawn_bounds=spawn_bounds,
-            exclusion_rects=exclusions,
-            grid_resolution=self.spawn_grid_resolution,
-            safety_margin=self.robot_safety_margin,
-            yaw_range=self.robot_init_yaw_range,
-        )
+        def make_strategy(omap_cfg=None, spawn_bounds=None) -> OccupancySamplerStrategy:
+            return OccupancySamplerStrategy(
+                omap_config=omap_cfg,
+                spawn_bounds=spawn_bounds,
+                exclusion_rects=exclusions,
+                grid_resolution=self.spawn_grid_resolution,
+                safety_margin=self.robot_safety_margin,
+                usd_offset=self.occupancy_map_offset,
+                yaw_range=self.robot_init_yaw_range,
+            )
+
+        if self.occupancy_map_yaml and os.path.exists(self.occupancy_map_yaml):
+            self.position_strategy = make_strategy(
+                omap_cfg=OccupancyMapConfig(
+                    yaml_path=self.occupancy_map_yaml,
+                    safety_margin=self.robot_safety_margin,
+                )
+            )
+        elif len(self.spawn_areas) > 1:
+            # Sample each area separately so gaps between areas are never used.
+            self.position_strategy = CompositeStrategy(
+                [make_strategy(spawn_bounds=a.bounds) for a in self.spawn_areas],
+                weights=[a.weight for a in self.spawn_areas],
+            )
+        else:
+            bounds = self.spawn_areas[0].bounds if self.spawn_areas else None
+            self.position_strategy = make_strategy(spawn_bounds=bounds)
 
     # ========== Scene Config Implementations ==========
 

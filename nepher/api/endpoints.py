@@ -65,23 +65,7 @@ class APIEndpoints:
         """Restore environment endpoint."""
         return f"/api/v1/envs/{env_id}/restore"
 
-    # Authentication
-    API_KEY_LOGIN = "/api/v1/auth/api-key/login"
-
-    # API Key Management
-    API_KEYS = "/api/v1/api-keys/"
-
-    @staticmethod
-    def api_key(api_key_id: str) -> str:
-        """Get/delete API key endpoint."""
-        return f"/api/v1/api-keys/{api_key_id}"
-
-    @staticmethod
-    def api_key_regenerate(api_key_id: str) -> str:
-        """Regenerate API key endpoint."""
-        return f"/api/v1/api-keys/{api_key_id}/regenerate"
-
-    # User Management
+    # User Management (API keys are managed by the account service: `npcli account api-keys`)
     USERS_ME = "/api/v1/users/me"
     USERS = "/api/v1/users/"
 

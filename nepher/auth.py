@@ -1,119 +1,47 @@
 """
 Authentication management for Nepher.
 
-Handles secure API key storage and user authentication.
+API keys are stored in the system keyring when available, otherwise in
+``~/.nepher/api_key`` with owner-only permissions. Keys from ``npcli login``
+and ``NEPHER_API_KEY`` are picked up automatically.
 """
 
-import os
-from pathlib import Path
 from typing import Optional
-from nepher.config import get_config, set_config
-from nepher.api.client import APIClient, APIError
 
-try:
-    import keyring
-    HAS_KEYRING = True
-except ImportError:
-    HAS_KEYRING = False
+from nepher.api.client import APIClient, APIError, reset_client
+from nepher.credentials import clear_api_key, resolve_api_key, store_api_key
 
-
-def _get_keyring_service() -> str:
-    """Get keyring service name."""
-    return "nepher"
-
-
-def _get_keyring_username() -> str:
-    """Get keyring username."""
-    return "api_key"
-
-
-def _get_encrypted_file_path() -> Path:
-    """Get path to encrypted API key file."""
-    config_dir = Path.home() / ".nepher"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    return config_dir / "api_key.enc"
-
-
-def _store_api_key_secure(api_key: str):
-    """Store API key securely (keyring or encrypted file)."""
-    if HAS_KEYRING:
-        try:
-            keyring.set_password(_get_keyring_service(), _get_keyring_username(), api_key)
-            return
-        except Exception:
-            pass  # Fall back to file storage
-
-    import base64
-
-    encrypted = base64.b64encode(api_key.encode()).decode()
-    _get_encrypted_file_path().write_text(encrypted)
-
-
-def _get_api_key_secure() -> Optional[str]:
-    """Retrieve API key from secure storage."""
-    if HAS_KEYRING:
-        try:
-            key = keyring.get_password(_get_keyring_service(), _get_keyring_username())
-            if key:
-                return key
-        except Exception:
-            pass
-
-    key_file = _get_encrypted_file_path()
-    if key_file.exists():
-        try:
-            import base64
-
-            encrypted = key_file.read_text()
-            return base64.b64decode(encrypted.encode()).decode()
-        except Exception:
-            pass
-
-    return None
-
-
-def _clear_api_key_secure():
-    """Clear API key from secure storage."""
-    if HAS_KEYRING:
-        try:
-            keyring.delete_password(_get_keyring_service(), _get_keyring_username())
-        except Exception:
-            pass
-
-    key_file = _get_encrypted_file_path()
-    if key_file.exists():
-        key_file.unlink()
+API_KEY_PREFIX = "nepher_"
 
 
 def login(api_key: str) -> bool:
     """
-    Login with API key.
+    Validate and store an API key.
 
     Args:
-        api_key: API key to store
+        api_key: API key (must start with ``nepher_``)
 
     Returns:
         True if login successful, False otherwise
     """
+    api_key = api_key.strip()
+    if not api_key.startswith(API_KEY_PREFIX):
+        return False
+
     try:
-        client = APIClient(api_key=None)
-        response = client.api_key_login(api_key)
-        if not response or "access_token" not in response:
-            return False
+        APIClient(api_key=api_key).get_user_info()
     except APIError:
         return False
 
-    # Store API key securely
-    _store_api_key_secure(api_key)
-    set_config("api_key", api_key, save=True)
-
+    store_api_key(api_key)
+    reset_client()
     return True
 
 
 def logout():
-    """Logout and clear stored credentials."""
-    _clear_api_key_secure()
-    set_config("api_key", None, save=True)
+    """Clear credentials stored by ``nepher login``."""
+    clear_api_key()
+    reset_client()
 
 
 def whoami() -> Optional[dict]:
@@ -128,23 +56,11 @@ def whoami() -> Optional[dict]:
         return None
 
     try:
-        client = APIClient(api_key=api_key)
-        return client.get_user_info()
+        return APIClient(api_key=api_key).get_user_info()
     except APIError:
         return None
 
 
 def get_api_key() -> Optional[str]:
-    """
-    Get stored API key.
-
-    Returns:
-        API key or None if not set
-    """
-    key = _get_api_key_secure()
-    if key:
-        return key
-
-    config = get_config()
-    return config.get_api_key() if config else None
-
+    """Get the API key that requests will use, or None if not set."""
+    return resolve_api_key()

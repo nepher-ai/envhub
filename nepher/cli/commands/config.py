@@ -25,69 +25,60 @@ def _mask_secret(key: str, value: Any) -> Any:
     return value
 
 
+def _parse_value(value: str) -> Any:
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    if value.isdigit():
+        return int(value)
+    if value.replace(".", "", 1).isdigit():
+        return float(value)
+    return value
+
+
 @config.command()
 @click.argument("key")
 def get(key: str):
     """Get configuration value (secrets are masked)."""
-    try:
-        value = get_config().get(key)
-        if value is None:
-            print_error(f"Configuration key '{key}' not found.")
-        else:
-            display = _mask_secret(key, value)
-            click.echo(display)
-
-    except Exception as e:
-        print_error(f"Failed to get config: {str(e)}")
+    value = get_config().get(key)
+    if value is None:
+        print_error(f"Configuration key '{key}' not found.")
+        raise SystemExit(1)
+    click.echo(_mask_secret(key, value))
 
 
-@config.command()
+@config.command(name="set")
 @click.argument("key")
 @click.argument("value")
-def set(key: str, value: str):
+def set_value(key: str, value: str):
     """Set configuration value."""
     try:
-        if value.lower() in ("true", "false"):
-            value = value.lower() == "true"
-        elif value.isdigit():
-            value = int(value)
-        elif value.replace(".", "", 1).isdigit():
-            value = float(value)
-
-        set_config(key, value, save=True)
-        display = _mask_secret(key, value) if isinstance(value, str) else value
+        parsed = _parse_value(value)
+        set_config(key, parsed, save=True)
+        display = _mask_secret(key, parsed) if isinstance(parsed, str) else parsed
         print_success(f"Set {key} = {display}")
-
     except Exception as e:
-        print_error(f"Failed to set config: {str(e)}")
+        print_error(f"Failed to set config: {e}")
+        raise SystemExit(1)
 
 
-@config.command()
-def list():
-    """List all configuration values."""
-    try:
-        cfg = get_config()
-        print_info("Configuration:")
-        click.echo(f"  api_url: {cfg.get('api_url')}")
-        click.echo(f"  cache_dir: {cfg.get('cache_dir')}")
-        click.echo(f"  default_category: {cfg.get('default_category')}")
-
-    except Exception as e:
-        print_error(f"Failed to list config: {str(e)}")
+@config.command(name="list")
+def list_values():
+    """List configuration values."""
+    cfg = get_config()
+    print_info("Configuration:")
+    click.echo(f"  api_url: {cfg.get('api_url')}")
+    click.echo(f"  cache_dir: {cfg.get('cache_dir')}")
+    click.echo(f"  default_category: {cfg.get('default_category')}")
 
 
 @config.command()
 def reset():
-    """Reset configuration to defaults."""
+    """Reset configuration to defaults (stored API key is not affected)."""
     try:
-        config = get_config()
-        config_file = getattr(config, "_config_file", None)
-        if config_file and config_file.exists():
-            config_file.unlink()
+        if get_config().reset():
             print_success("Configuration reset to defaults.")
         else:
             print_info("No configuration file to reset.")
-
     except Exception as e:
-        print_error(f"Failed to reset config: {str(e)}")
-
+        print_error(f"Failed to reset config: {e}")
+        raise SystemExit(1)

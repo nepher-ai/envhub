@@ -4,7 +4,12 @@ Nepher: Universal Isaac Lab Environments Platform
 A unified, category-agnostic Python package for managing Isaac Lab environments.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version as _package_version
+
+try:
+    __version__ = _package_version("nepher")
+except PackageNotFoundError:
+    __version__ = "0.0.0+unknown"
 
 from nepher.config import get_config, set_config
 from nepher.auth import login, logout, whoami, get_api_key
