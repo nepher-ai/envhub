@@ -21,6 +21,8 @@ from pathlib import Path
 
 import torch
 
+from nepher.utils.strategies.prebaked_pairs import cached_tensor
+
 
 class PrebakedScenarioStrategy:
     """Strategy backed by pre-computed multi-object manipulation scenarios.
@@ -113,9 +115,9 @@ class PrebakedScenarioStrategy:
             spawn_pos: ``(N, M, 3)`` robot-local-frame spawn positions.
             spawn_rot: ``(N, M, 4)`` spawn orientations (wxyz quaternion).
         """
-        idx = env_ids.long() % self.num_scenarios
-        t_pos = torch.as_tensor(self._spawn_pos, dtype=torch.float32, device=device)
-        t_rot = torch.as_tensor(self._spawn_rot, dtype=torch.float32, device=device)
+        t_pos = cached_tensor(self, "spawn_pos", self._spawn_pos, device)
+        t_rot = cached_tensor(self, "spawn_rot", self._spawn_rot, device)
+        idx = env_ids.to(t_pos.device).long() % self.num_scenarios
         return t_pos[idx], t_rot[idx]
 
     def get_goals(
@@ -129,9 +131,9 @@ class PrebakedScenarioStrategy:
             goal_pos: ``(N, M, 3)`` robot-local-frame goal positions.
             goal_rot: ``(N, M, 4)`` goal orientations (wxyz quaternion).
         """
-        idx = env_ids.long() % self.num_scenarios
-        t_pos = torch.as_tensor(self._goal_pos, dtype=torch.float32, device=device)
-        t_rot = torch.as_tensor(self._goal_rot, dtype=torch.float32, device=device)
+        t_pos = cached_tensor(self, "goal_pos", self._goal_pos, device)
+        t_rot = cached_tensor(self, "goal_rot", self._goal_rot, device)
+        idx = env_ids.to(t_pos.device).long() % self.num_scenarios
         return t_pos[idx], t_rot[idx]
 
     # ------------------------------------------------------------------

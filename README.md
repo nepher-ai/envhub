@@ -1,193 +1,179 @@
-# Nepher: Universal Isaac Lab Environments Platform
+<div align="center">
 
+# 🌐 Nepher EnvHub
+
+**Discover, share and load Isaac Lab simulation environments with one command.**
+
+[![PyPI](https://img.shields.io/pypi/v/nepher?color=blue)](https://pypi.org/project/nepher/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
+[![Isaac Lab](https://img.shields.io/badge/Isaac%20Lab-ready-76B900.svg)](https://isaac-sim.github.io/IsaacLab/)
+[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-green.svg)](LICENSE)
 
-**Nepher** is a unified, category-agnostic Python package for managing Isaac Lab environments across all categories (navigation, manipulation, humanoid, locomotion, etc.). It provides a professional command-line interface and Python API for discovering, downloading, uploading, and managing environment bundles for Isaac Lab/Isaac Sim.
+[Quick start](#-quick-start) •
+[CLI](#-cli) •
+[Python API](#-python-api) •
+[Bundle format](#-bundle-format) •
+[Configuration](#%EF%B8%8F-configuration)
 
-## Why EnvHub is Needed
+</div>
 
-Isaac Lab researchers and developers frequently need to work with diverse simulation environments across multiple categories (navigation, manipulation, humanoid, etc.). Managing these environments manually leads to several challenges:
+---
 
-- **Fragmented Environment Management**: Without a centralized platform, environments are scattered across repositories, making discovery and sharing difficult
-- **Inconsistent Structure**: Different environment formats and structures make integration into research workflows cumbersome
-- **Limited Discoverability**: Researchers struggle to find and evaluate suitable environments for their tasks
-- **Version Control Issues**: Managing environment versions, dependencies, and updates becomes complex at scale
-- **Repetitive Setup**: Setting up environments requires manual downloads, configuration, and path management
+`nepher` is the Python package and CLI for **EnvHub**, the Nepher catalogue of Isaac Lab environments. It downloads, caches and uploads environment bundles for any category (navigation, manipulation, locomotion, humanoid, ...) and turns their scenes into ready-to-use Isaac Lab configs.
 
-EnvHub addresses these challenges by providing a unified platform for environment discovery, management, and integration with Isaac Lab. It standardizes environment structures, enables easy sharing and collaboration, and simplifies the workflow from environment discovery to integration in research code.
+> [!TIP]
+> Prefer one tool for everything? The same commands are available as `npcli envhub ...` in [nepher-cli](https://github.com/nepher-ai/nepher-cli). Both share the same login, API and cache.
 
-## What is an Environment?
+## ✨ Concepts
 
-An **Environment** (or **env**) is a bundle containing one or more simulation scenes organized under a common theme or purpose. Each environment has:
+| | |
+|---|---|
+| **Environment** | A versioned bundle of related scenes, described by a `manifest.yaml`. Type is `usd` or `preset`. |
+| **USD scene** | USD assets plus their scene configuration: placement and scale, terrain physics, lighting and sky, spawn areas, and an optional occupancy map. |
+| **Preset scene** | A scene generated programmatically by a Python preset file. |
 
-- **Unique Identifier**: An environment ID that uniquely identifies the bundle
-- **Category**: The type of environment (navigation, manipulation, humanoid, locomotion, etc.)
-- **Type**: Either `usd` (USD-based scenes) or `preset` (programmatically generated scenes)
-- **Metadata**: Description, version, author, and other metadata
-- **Scenes**: A collection of related scenes that share the same environment context
-
-Environments serve as containers that group related simulation scenes together, making it easier to organize, discover, and manage simulation assets.
-
-## What is a Scene?
-
-A **Scene** represents a single, specific simulation configuration within an environment. Each scene defines:
-
-- **Scene Identifier**: A unique name within the environment
-- **Type-Specific Configuration**: 
-  - For USD scenes: A USD file path plus optional occupancy maps and metadata
-  - For preset scenes: A Python configuration file that generates the scene programmatically
-- **Scene-Specific Settings**: Spawn areas, exclusion zones, waypoints, and other scene-specific parameters
-
-Scenes are the actual simulation configurations that get loaded into Isaac Lab for training or evaluation. A single environment can contain multiple scenes, allowing researchers to work with variations of similar environments.
-
-## Installation
-
-### From PyPI
+## 📦 Installation
 
 ```bash
-pip install nepher
+pip install nepher                 # core: list, download, upload, cache
+pip install "nepher[isaaclab]"     # + load scenes and `nepher view`
+pip install "nepher[keyring]"      # + store the API key in the system keyring
 ```
 
-### From Source
-
-Clone the repository and install in editable mode:
+## 🚀 Quick start
 
 ```bash
-git clone https://github.com/nepher-ai/envhub.git
-cd envhub
-pip install -e .
+nepher login                              # paste your key from nepher.ai/account
+nepher list --category navigation         # browse environments
+nepher download go2-maze-v0               # fetch into the local cache
+nepher view go2-maze-v0 --scene 0         # open a scene in Isaac Sim
 ```
-
-#### Optional Dependencies
-
-Install with optional extras as needed:
-
-```bash
-# Development tools (pytest, black, ruff, mypy)
-pip install -e ".[dev]"
-
-# Keyring support for secure credential storage
-pip install -e ".[keyring]"
-
-# Isaac Lab integration
-pip install -e ".[isaaclab]"
-
-# All optional dependencies
-pip install -e ".[dev,keyring,isaaclab]"
-```
-
-## Environment and Scene Definitions
-
-### Environment Structure
-
-Environments are defined using a `manifest.yaml` file that describes the environment bundle:
-
-**Example: USD Environment**
-```yaml
-id: digital-twin-warehouse-v1
-type: usd
-version: 1.0.0
-description: Digital twin of a small warehouse environment for navigation training
-category: navigation
-
-scenes:
-  - scene_id: small_warehouse
-    description: Small warehouse digital twin with realistic layout and obstacles
-    usd: small_warehouse_digital_twin.usd
-    omap_image: digital_twin_omap/map.png
-    omap_meta: digital_twin_omap/map.yaml
-```
-
-**Example: Preset Environment**
-```yaml
-id: indoor-environments-v1
-type: preset
-version: 1.0.0
-description: Indoor navigation environments including hospital corridors and warehouse
-category: navigation
-
-preset_scenes:
-  - scene_id: hospital
-    description: Hospital corridor environment for indoor navigation
-    preset: hospital_preset.py
-  - scene_id: warehouse
-    description: Warehouse with shelves and bounding walls
-    preset: warehouse_preset.py
-```
-
-### Usage Example
-
-Here's how to load and use environments and scenes in your Isaac Lab code:
 
 ```python
 from nepher import load_env, load_scene
 
-# Load an environment
-env = load_env("indoor-environments-v1", category="navigation")
-
-# List all scenes in the environment
-print("Available scenes:", [s.name for s in env.get_all_scenes()])
-# Output: Available scenes: ['hospital', 'warehouse']
-
-# Load a specific scene configuration
-scene_cfg = load_scene(env, scene="hospital", category="navigation")
-
-# Use the scene configuration in Isaac Lab
-from isaaclab.envs import ManagerBasedRLEnv
-# ... configure your environment with scene_cfg
+env = load_env("go2-maze-v0", category="navigation")
+scene_cfg = load_scene(env, scene=0)      # plug into your Isaac Lab env config
 ```
 
-**USD Scene in Isaac Sim**
-![USD Scene Example](assets/usd_example.png)
+## 🧰 CLI
 
-**Preset Scene in Isaac Sim**
-![Preset Scene Example](assets/preset_example.png)
+| Command | What it does |
+|---|---|
+| `nepher login` · `logout` · `whoami` | Manage authentication |
+| `nepher list` | List environments (`--category`, `--type`, `--search`, `--benchmark`, `--limit`, `--json`) |
+| `nepher download ENV_ID` | Download and cache a bundle by ID or exact name (`--force`, `--cache-dir`) |
+| `nepher upload PATH` | Upload a bundle folder or `.zip` (`--category` required, `--thumbnail`, `--benchmark`) |
+| `nepher view ENV_ID` | List scenes, or open one in Isaac Sim with `--scene NAME_OR_INDEX` |
+| `nepher cache` `list` · `info` · `clear` · `migrate` | Manage the local cache |
+| `nepher config` `get` · `set` · `list` · `reset` | Manage settings |
 
-## Quick Start
+All commands exit with status `1` on failure, so they are safe to use in scripts.
+
+<details>
+<summary><b>Running <code>nepher view</code> inside Isaac Lab</b></summary>
+
+`view` needs Isaac Lab's Python, so launch it through the helper script. Launcher flags such as `--headless` and `--device` are forwarded.
 
 ```bash
-# Authenticate with your API key (you will be prompted; key is not shown or stored in shell history)
-nepher login
-# Or pass the key explicitly: nepher login --api-key <api_key>
-
-# Check current authentication status
-nepher whoami
-
-# Logout and clear credentials
-nepher logout
-
-# List available environments
-nepher list --category navigation
-
-# List evaluation benchmarks (evaluators only - for tournaments)
-nepher list --eval-benchmarks
-
-# Download an environment
-nepher download <env_id> --category navigation
-
-# List cached environments
-nepher cache list
-
-# View an environment in Isaac Sim
-nepher view <env_id> --category navigation
-
-# View a specific scene
-nepher view <env_id> --category navigation --scene <scene_name>
-
-# Upload your own environment (contributors or evaluators only)
-nepher upload ./my-env --category manipulation --thumbnail ./thumbnail.png
+./isaaclab.sh -p /path/to/envhub/scripts/nepher_view.py go2-maze-v0 --scene 0     # Linux / macOS
+isaaclab.bat -p C:\path\to\envhub\scripts\nepher_view.py go2-maze-v0 --scene 0    # Windows
 ```
 
-## Features
+</details>
 
-- **Universal Category Support**: Works with any environment category (navigation, manipulation, humanoid, locomotion, etc.)
-- **Professional CLI**: Intuitive command-line interface for all operations
-- **Seamless Integration**: Direct integration with `envhub-backend` API
-- **Flexible Configuration**: User-configurable cache directories and settings
+## 🔑 Authentication
 
+Create an API key at [nepher.ai/account](https://nepher.ai/account) → **API Keys** (keys start with `nepher_`). The first key found wins:
 
-## License
+1. `--api-key` flag or the `NEPHER_API_KEY` environment variable (recommended for CI)
+2. The key saved by `nepher login` (system keyring, or `~/.nepher/api_key`)
+3. The key saved by `npcli login`
 
-Business Source License 1.1 (BUSL-1.1) - see [LICENSE](LICENSE) for details.
+## 🐍 Python API
 
+```python
+from nepher import get_client, load_env, load_scene
+
+env = load_env("indoor-environments-v1", category="navigation")
+print([s.name for s in env.get_all_scenes()])    # ['hospital', 'warehouse']
+scene_cfg = load_scene(env, scene="hospital")
+
+client = get_client()
+envs = client.list_environments(category="navigation", limit=10)
+```
+
+`load_env` reads from the local cache only; run `nepher download` first.
+
+## 📁 Bundle format
+
+A bundle is a folder (or `.zip`) with a `manifest.yaml` at its root. All paths are relative to the bundle and may not escape it.
+
+<table>
+<tr><th>USD environment</th><th>Preset environment</th></tr>
+<tr><td>
+
+```yaml
+id: digital-twin-warehouse-v1
+type: usd
+version: 1.0.0
+category: navigation
+scenes:
+  - scene_id: small_warehouse
+    usd: warehouse.usd
+    omap_meta: omap/map.yaml  # optional
+    scene: warehouse_scene.py # optional
+```
+
+</td><td>
+
+```yaml
+id: indoor-environments-v1
+type: preset
+version: 1.0.0
+category: navigation
+preset_scenes:
+  - scene_id: hospital
+    preset: hospital_preset.py
+  - scene_id: warehouse
+    preset: warehouse_preset.py
+```
+
+</td></tr>
+</table>
+
+The optional scene file configures how the USD assets are used in simulation: transform and scale, terrain friction, lighting and sky, spawn areas and exclusion zones. When an occupancy map is provided, it decides where robots and goals spawn.
+
+> [!WARNING]
+> Preset and scene files are executed as Python when loaded. Only load bundles from authors you trust.
+
+## ⚙️ Configuration
+
+Priority: CLI flags → environment variables → `.nepherrc` (project) or `~/.nepher/config.toml` → defaults.
+
+| Key | Default | Env variable |
+|---|---|---|
+| `api_url` | `https://api.nepher.ai/envhub` | `NEPHER_ENVHUB_API_URL` |
+| `cache_dir` | `~/.nepher/cache` | `NEPHER_CACHE_DIR` |
+| `categories.<name>.cache_dir` | falls back to `cache_dir` | — |
+| `default_category` | unset | — |
+
+```bash
+nepher config set cache_dir /data/nepher-cache
+nepher config set categories.manipulation.cache_dir /fast-ssd/manipulation
+```
+
+Downloads are atomic: an interrupted or invalid download never replaces a good cached copy.
+
+## 🤝 Contributing
+
+```bash
+git clone https://github.com/nepher-ai/envhub.git && cd envhub
+pip install -e ".[dev]" && pytest
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## 📄 License
+
+Released under the [BSD 3-Clause License](LICENSE).

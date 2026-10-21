@@ -3,20 +3,43 @@ Category-agnostic API client for envhub-backend.
 """
 
 import logging
-import requests
+import os
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-from datetime import datetime
-from nepher.config import get_config
+from typing import Any, Dict, List, Optional
+
+import requests
+
 from nepher.api.endpoints import APIEndpoints
+from nepher.config import get_config
+from nepher.credentials import resolve_api_key
 
 logger = logging.getLogger(__name__)
+
+# (connect, read) timeouts in seconds. Bundles can be several GB, and the
+# backend may take a while to validate an upload before responding.
+DEFAULT_TIMEOUT = (10, 30)
+TRANSFER_TIMEOUT = (30, 600)
+DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 class APIError(Exception):
     """API client error."""
 
-    pass
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _error_message(response: requests.Response, fallback: str) -> str:
+    try:
+        data = response.json()
+    except ValueError:
+        return response.text.strip() or fallback
+    if isinstance(data, dict):
+        for key in ("message", "detail", "error"):
+            if data.get(key):
+                return str(data[key])
+    return fallback
 
 
 class APIClient:
@@ -28,69 +51,19 @@ class APIClient:
 
         Args:
             api_url: API base URL (defaults to config)
-            api_key: API key or JWT token (defaults to config)
+            api_key: API key or JWT token (defaults to stored credentials)
         """
-        config = get_config()
-        self.api_url = (api_url or config.get_api_url()).rstrip("/")
-        self.api_key = api_key or config.get_api_key()
+        self.api_url = (api_url or get_config().get_api_url()).rstrip("/")
+        self.api_key = api_key or resolve_api_key()
         self.session = requests.Session()
-        self._jwt_token: Optional[str] = None
-        self._raw_api_key: Optional[str] = None
 
         if self.api_key:
             if self.api_key.startswith("nepher_"):
-                # Send the API key directly via X-API-Key. The backend verifies
-                # it against account-backend on every request, so authentication
-                # never depends on a short-lived JWT — long-running validator
-                # downloads keep working even after an access token would expire.
-                self._raw_api_key = self.api_key
-                self.session.headers.update({"X-API-Key": self._raw_api_key})
+                # The backend verifies X-API-Key on every request, so long
+                # validator runs never depend on a short-lived access token.
+                self.session.headers["X-API-Key"] = self.api_key
             else:
-                # Treat a non-prefixed value as a pre-issued JWT bearer token.
-                self._jwt_token = self.api_key
-                self.session.headers.update({"Authorization": f"Bearer {self._jwt_token}"})
-
-    def _ensure_jwt_token(self):
-        """Exchange API key for a JWT token (legacy fallback).
-
-        Only used when the API key is *not* sent directly via X-API-Key (e.g.
-        if a future backend requires a bearer token). When X-API-Key is set we
-        skip this entirely so requests never depend on an expiring JWT.
-        """
-        if "X-API-Key" in self.session.headers:
-            return
-        if self._raw_api_key and not self._jwt_token:
-            original_auth = self.session.headers.get("Authorization")
-            self.session.headers.pop("Authorization", None)
-            try:
-                response = self.session.post(
-                    f"{self.api_url}{APIEndpoints.API_KEY_LOGIN}",
-                    json={"api_key": self._raw_api_key},
-                    timeout=30,
-                )
-                response.raise_for_status()
-                login_data = response.json()
-                self._jwt_token = login_data.get("access_token")
-                if self._jwt_token:
-                    self.session.headers.update({"Authorization": f"Bearer {self._jwt_token}"})
-            except requests.exceptions.HTTPError as e:
-                if original_auth:
-                    self.session.headers.update({"Authorization": original_auth})
-                error_msg = "API key authentication failed"
-                if e.response is not None:
-                    try:
-                        error_data = e.response.json()
-                        error_msg = error_data.get("message", error_data.get("detail", error_msg))
-                    except (ValueError, KeyError):
-                        if e.response.status_code == 401:
-                            error_msg = "Invalid or expired API key. Please login again with 'nepher login'."
-                        else:
-                            error_msg = e.response.text or error_msg
-                raise APIError(error_msg) from e
-            except requests.exceptions.RequestException as e:
-                if original_auth:
-                    self.session.headers.update({"Authorization": original_auth})
-                raise APIError(f"API key login request failed: {str(e)}") from e
+                self.session.headers["Authorization"] = f"Bearer {self.api_key}"
 
     def _request(
         self,
@@ -101,70 +74,46 @@ class APIClient:
         data: Optional[Dict[str, Any]] = None,
         files: Optional[Dict[str, Any]] = None,
         stream: bool = False,
+        timeout: Any = DEFAULT_TIMEOUT,
+        explain_401: bool = True,
     ) -> requests.Response:
-        """
-        Make HTTP request.
-        
-        Args:
-            method: HTTP method (GET, POST, etc.)
-            endpoint: API endpoint path
-            params: URL query parameters
-            json_data: JSON request body (renamed from 'json' to avoid shadowing builtin)
-            data: Form data (used when files are present)
-            files: Files to upload (multipart/form-data)
-            stream: Whether to stream the response
-            
-        Note: When files are provided, data should be used for form fields instead of json_data.
-        """
-        if endpoint != APIEndpoints.API_KEY_LOGIN:
-            self._ensure_jwt_token()
-        
-        url = f"{self.api_url}{endpoint}"
+        """Make an HTTP request and raise APIError on failure.
 
+        Args:
+            explain_401: When True, append a login hint to 401 responses.
+                Login validation turns this off so the hint does not tell
+                the user to run the command they are already running.
+        """
+        url = f"{self.api_url}{endpoint}"
         try:
-            if files:
-                response = self.session.request(
-                    method=method,
-                    url=url,
-                    params=params,
-                    data=data,
-                    files=files,
-                    stream=stream,
-                    timeout=30,
-                )
-            else:
-                response = self.session.request(
-                    method=method,
-                    url=url,
-                    params=params,
-                    json=json_data,
-                    data=data,
-                    stream=stream,
-                    timeout=30,
-                )
-            response.raise_for_status()
-            return response
-        except requests.exceptions.HTTPError as e:
-            error_msg = "API request failed"
-            if e.response is not None:
-                try:
-                    error_data = e.response.json()
-                    error_msg = error_data.get("message", error_data.get("detail", error_msg))
-                except (ValueError, KeyError):
-                    error_msg = e.response.text or error_msg
-            raise APIError(f"{error_msg}") from e
+            response = self.session.request(
+                method=method,
+                url=url,
+                params=params,
+                json=json_data if not files else None,
+                data=data,
+                files=files,
+                stream=stream,
+                timeout=timeout,
+            )
         except requests.exceptions.RequestException as e:
-            raise APIError(f"Request failed: {str(e)}") from e
+            raise APIError(f"Request failed: {e}") from e
+
+        if response.status_code >= 400:
+            message = _error_message(response, f"HTTP {response.status_code}")
+            if response.status_code == 401 and explain_401:
+                message = f"{message} (run 'nepher login' or set NEPHER_API_KEY)"
+            response.close()
+            raise APIError(message, status_code=response.status_code)
+        return response
 
     def health_check(self) -> Dict[str, Any]:
         """Check API health."""
-        response = self._request("GET", APIEndpoints.HEALTH)
-        return response.json()
+        return self._request("GET", APIEndpoints.HEALTH).json()
 
     def get_info(self) -> Dict[str, Any]:
         """Get API information."""
-        response = self._request("GET", APIEndpoints.INFO)
-        return response.json()
+        return self._request("GET", APIEndpoints.INFO).json()
 
     def list_environments(
         self,
@@ -189,13 +138,13 @@ class APIClient:
         Returns:
             List of environment dictionaries
         """
-        params = {}
+        params: Dict[str, Any] = {}
         if category:
             params["category"] = category
         if type:
             params["type"] = type
         if benchmark is not None:
-            params["benchmark"] = benchmark
+            params["benchmark"] = str(benchmark).lower()
         if search:
             params["search"] = search
         if limit:
@@ -203,55 +152,49 @@ class APIClient:
         if offset:
             params["offset"] = offset
 
-        response = self._request("GET", APIEndpoints.ENVS, params=params)
-        result = response.json()
+        result = self._request("GET", APIEndpoints.ENVS, params=params).json()
         if isinstance(result, dict) and "environments" in result:
             return result["environments"]
         return result if isinstance(result, list) else []
 
     def list_eval_benchmarks(self) -> List[Dict[str, Any]]:
-        """
-        List evaluation benchmarks.
-
-        Returns:
-            List of evaluation benchmark dictionaries
-        """
-        response = self._request("GET", APIEndpoints.ENVS_EVAL_BENCHMARKS)
-        result = response.json()
+        """List evaluation benchmarks."""
+        result = self._request("GET", APIEndpoints.ENVS_EVAL_BENCHMARKS).json()
         if isinstance(result, dict) and "environments" in result:
             return result["environments"]
         return result if isinstance(result, list) else []
 
     def get_environment(self, env_id: str) -> Dict[str, Any]:
         """Get environment details."""
-        response = self._request("GET", APIEndpoints.env(env_id))
-        return response.json()
+        return self._request("GET", APIEndpoints.env(env_id)).json()
 
     def download_environment(self, env_id: str, dest_path: Path) -> Path:
         """
         Download environment bundle.
 
-        Args:
-            env_id: Environment ID
-            dest_path: Destination path for the ZIP file
+        The file is written to ``<dest_path>.part`` and renamed only once the
+        transfer completes, so an interrupted download never looks complete.
 
-        Returns:
-            Path to downloaded file
-            
         Raises:
             APIError: If download fails
             OSError: If file cannot be written
         """
-        response = self._request("GET", APIEndpoints.env_download(env_id), stream=True)
+        response = self._request(
+            "GET", APIEndpoints.env_download(env_id), stream=True, timeout=TRANSFER_TIMEOUT
+        )
 
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        part_path = dest_path.with_name(dest_path.name + ".part")
         try:
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(dest_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:  # Filter out keep-alive chunks
-                        f.write(chunk)
-        except (OSError, IOError) as e:
+            with response, open(part_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                    f.write(chunk)
+            os.replace(part_path, dest_path)
+        except requests.exceptions.RequestException as e:
+            part_path.unlink(missing_ok=True)
+            raise APIError(f"Download interrupted: {e}") from e
+        except OSError as e:
+            part_path.unlink(missing_ok=True)
             raise OSError(f"Cannot write downloaded file to {dest_path}: {e}") from e
 
         return dest_path
@@ -279,24 +222,7 @@ class APIClient:
         Returns:
             Upload result dictionary
         """
-        bundle_file = open(bundle_path, "rb")
-        files = {"bundle": (bundle_path.name, bundle_file, "application/zip")}
-        file_handles = [bundle_file]
-        
-        if thumbnail:
-            thumbnail_path = Path(thumbnail)
-            content_type = "image/jpeg"
-            if thumbnail_path.suffix.lower() == ".png":
-                content_type = "image/png"
-            elif thumbnail_path.suffix.lower() == ".webp":
-                content_type = "image/webp"
-            elif thumbnail_path.suffix.lower() in [".jpg", ".jpeg"]:
-                content_type = "image/jpeg"
-            
-            thumbnail_file = open(thumbnail, "rb")
-            files["thumbnail"] = (thumbnail_path.name, thumbnail_file, content_type)
-            file_handles.append(thumbnail_file)
-
+        content_types = {".png": "image/png", ".webp": "image/webp"}
         data = {
             "category": category,
             "benchmark": str(benchmark).lower(),
@@ -304,139 +230,79 @@ class APIClient:
             "duplicate_policy": duplicate_policy,
         }
 
-        try:
-            response = self._request("POST", APIEndpoints.ENVS, files=files, data=data)
-            return response.json()
-        finally:
-            for f in file_handles:
-                f.close()
-
-    def get_user_info(self) -> Dict[str, Any]:
-        """Get current user information."""
-        response = self._request("GET", APIEndpoints.USERS_ME)
+        with open(bundle_path, "rb") as bundle_file:
+            files: Dict[str, Any] = {"bundle": (bundle_path.name, bundle_file, "application/zip")}
+            if thumbnail:
+                thumbnail_path = Path(thumbnail)
+                content_type = content_types.get(thumbnail_path.suffix.lower(), "image/jpeg")
+                with open(thumbnail_path, "rb") as thumbnail_file:
+                    files["thumbnail"] = (thumbnail_path.name, thumbnail_file, content_type)
+                    response = self._request(
+                        "POST", APIEndpoints.ENVS, files=files, data=data, timeout=TRANSFER_TIMEOUT
+                    )
+            else:
+                response = self._request(
+                    "POST", APIEndpoints.ENVS, files=files, data=data, timeout=TRANSFER_TIMEOUT
+                )
         return response.json()
 
     def api_key_login(self, api_key: str) -> Dict[str, Any]:
-        """
-        Exchange API key for JWT tokens.
+        """Validate an API key and return the session payload.
+
+        The key is sent in the JSON body. ``GET /api/v1/users/me`` does not
+        accept that key as ``X-API-Key``; environment routes do.
 
         Args:
-            api_key: API key to exchange
+            api_key: Nepher API key (``nepher_...``)
 
         Returns:
-            Dictionary containing access_token, refresh_token, and user info
+            Login payload with ``access_token`` and ``user``
         """
-        response = self._request(
-            "POST", APIEndpoints.API_KEY_LOGIN, json_data={"api_key": api_key}
-        )
-        return response.json()
+        return self._request(
+            "POST",
+            APIEndpoints.API_KEY_LOGIN,
+            json_data={"api_key": api_key},
+            explain_401=False,
+        ).json()
 
-    def create_api_key(
-        self,
-        name: Optional[str] = None,
-        expires_at: Optional[datetime] = None,
-    ) -> Dict[str, Any]:
-        """
-        Create a new API key.
+    def get_user_info(self, *, explain_401: bool = True) -> Dict[str, Any]:
+        """Get current user information.
 
         Args:
-            name: Optional name for the API key
-            expires_at: Optional expiration date
-
-        Returns:
-            Dictionary containing API key (shown only once) and metadata
+            explain_401: When False, a 401 is returned as the server's own
+                message. ``nepher login`` uses that so it can show the reason
+                the key was rejected.
         """
-        data = {}
-        if name:
-            data["name"] = name
-        if expires_at:
-            data["expires_at"] = expires_at.isoformat()
-        response = self._request("POST", APIEndpoints.API_KEYS, json_data=data)
-        return response.json()
-
-    def list_api_keys(self) -> List[Dict[str, Any]]:
-        """
-        List user's API keys.
-
-        Returns:
-            List of API key dictionaries (without key values)
-        """
-        response = self._request("GET", APIEndpoints.API_KEYS)
-        return response.json()
-
-    def get_api_key(self, api_key_id: str) -> Dict[str, Any]:
-        """
-        Get API key details.
-
-        Args:
-            api_key_id: API key ID
-
-        Returns:
-            API key dictionary (without key value)
-        """
-        response = self._request("GET", APIEndpoints.api_key(api_key_id))
-        return response.json()
-
-    def delete_api_key(self, api_key_id: str) -> None:
-        """
-        Delete an API key.
-
-        Args:
-            api_key_id: API key ID
-        """
-        self._request("DELETE", APIEndpoints.api_key(api_key_id))
-
-    def regenerate_api_key(self, api_key_id: str) -> Dict[str, Any]:
-        """
-        Regenerate an API key (creates new key, deactivates old one).
-
-        Args:
-            api_key_id: API key ID to regenerate
-
-        Returns:
-            Dictionary containing new API key (shown only once) and metadata
-        """
-        response = self._request("POST", APIEndpoints.api_key_regenerate(api_key_id))
-        return response.json()
+        return self._request("GET", APIEndpoints.USERS_ME, explain_401=explain_401).json()
 
 
 _client_instance: Optional[APIClient] = None
 
 
 def get_client(api_url: Optional[str] = None, api_key: Optional[str] = None) -> APIClient:
-    """Get the global API client instance.
+    """Get a shared API client.
 
-    Long-running processes (e.g. validators) call this repeatedly, often with
-    an explicit ``api_key`` resolved fresh from disk/env on every call. If we
-    blindly returned the first-ever-constructed instance forever, a client
-    built once with a bad/stale credential (e.g. a short-lived JWT instead of
-    a proper ``nepher_`` API key) would keep using it for the lifetime of the
-    process — even after the caller starts passing the correct key — because
-    the cached instance's auth headers were fixed at construction time and
-    never re-evaluated. See: intermittent "Token has expired" failures during
-    long validator runs even with a correctly configured API key.
-
-    To make this self-healing, the cached client is rebuilt whenever the
-    caller explicitly passes an ``api_key``/``api_url`` that differs from
-    what the cached instance is currently using. Callers that omit both
-    arguments (e.g. CLI commands relying on stored login state) keep reusing
-    the existing cached instance as before.
+    Credentials and URL are re-resolved on every call, and the cached client
+    is rebuilt when either changes. Long-running validators therefore pick up
+    a rotated key or ``nepher logout`` without restarting.
     """
     global _client_instance
 
-    if _client_instance is None:
-        _client_instance = APIClient(api_url=api_url, api_key=api_key)
-        return _client_instance
+    url = (api_url or get_config().get_api_url()).rstrip("/")
+    key = api_key or resolve_api_key()
 
-    if api_key is not None and api_key != _client_instance.api_key:
-        logger.info("EnvHub API client credentials changed — rebuilding client")
-        _client_instance = APIClient(api_url=api_url, api_key=api_key)
-        return _client_instance
-
-    if api_url is not None and api_url.rstrip("/") != _client_instance.api_url:
-        logger.info("EnvHub API client URL changed — rebuilding client")
-        _client_instance = APIClient(api_url=api_url, api_key=api_key)
-        return _client_instance
-
+    if (
+        _client_instance is None
+        or _client_instance.api_url != url
+        or _client_instance.api_key != key
+    ):
+        if _client_instance is not None:
+            logger.info("EnvHub API client settings changed; rebuilding client")
+        _client_instance = APIClient(api_url=url, api_key=key)
     return _client_instance
 
+
+def reset_client() -> None:
+    """Drop the shared client so the next call picks up new credentials."""
+    global _client_instance
+    _client_instance = None

@@ -11,13 +11,20 @@ Runtime sampling is just random index selection - O(1).
 
 from __future__ import annotations
 
+import math
 import os
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 from PIL import Image
 import yaml
+
+
+def _rotate(x: float, y: float, yaw: float) -> tuple[float, float]:
+    c, s = math.cos(yaw), math.sin(yaw)
+    return c * x - s * y, s * x + c * y
 
 
 @dataclass
@@ -70,6 +77,14 @@ class FastSpawnSampler:
         self.usd_offset = usd_offset
         self._valid_positions: torch.Tensor | None = None
         self._num_valid: int = 0
+        # Lattice used by validate(): world xy -> (row, col) via
+        # local = R(-grid_yaw) @ xy + grid_shift, col = local_x / step,
+        # row = local_y / step (flipped when grid_flip_rows).
+        self._grid_valid: torch.Tensor | None = None
+        self._grid_step: float = grid_resolution
+        self._grid_yaw: float = 0.0
+        self._grid_shift: tuple[float, float] = (0.0, 0.0)
+        self._grid_flip_rows: bool = False
         
         if omap_config and os.path.exists(omap_config.yaml_path):
             self._init_from_occupancy_map(omap_config)
@@ -115,22 +130,24 @@ class FastSpawnSampler:
         else:
             occupied = ((255 - pixel_values) / 255.0) > meta["free_thresh"]
         
-        # Dilate obstacles by safety margin using max pooling
+        # Dilate obstacles by the safety margin. A square max filter is separable,
+        # so two 1-D passes cost O(k) per pixel instead of O(k^2).
         if margin_px > 0:
-            occ_tensor = torch.from_numpy(occupied.astype(np.float32)).unsqueeze(0).unsqueeze(0)
-            dilated = torch.nn.functional.max_pool2d(
-                occ_tensor, 
-                kernel_size=2 * margin_px + 1, 
-                stride=1, 
-                padding=margin_px
-            )
-            occupied = dilated.squeeze().numpy() > 0.5
-        
-        # Find free cells (not occupied)
-        free_rows, free_cols = np.where(~occupied)
-        
+            occ = torch.from_numpy(occupied.astype(np.float32))[None, None]
+            k = 2 * margin_px + 1
+            occ = torch.nn.functional.max_pool2d(occ, kernel_size=(k, 1), stride=1, padding=(margin_px, 0))
+            occ = torch.nn.functional.max_pool2d(occ, kernel_size=(1, k), stride=1, padding=(0, margin_px))
+            occupied = occ[0, 0].numpy() > 0.5
+
+        free = ~occupied
+        free_rows, free_cols = np.where(free)
+
         if len(free_rows) == 0:
-            # No free cells - use origin as fallback
+            warnings.warn(
+                f"Occupancy map {config.yaml_path} has no free cells after a "
+                f"{config.safety_margin} m safety margin; spawning at the map origin.",
+                stacklevel=3,
+            )
             self._valid_positions = torch.tensor([[origin_x, origin_y]], device=self.device)
             self._num_valid = 1
             return
@@ -182,6 +199,49 @@ class FastSpawnSampler:
         positions = np.stack([world_x, world_y], axis=1).astype(np.float32)
         self._valid_positions = torch.from_numpy(positions).to(self.device)
         self._num_valid = len(positions)
+
+        # Inverse of the transforms above, for grid-based validate().
+        usd_x, usd_y, usd_yaw = 0.0, 0.0, 0.0
+        if self.usd_offset is not None:
+            usd_x, usd_y = self.usd_offset[0], self.usd_offset[1]
+            usd_yaw = self.usd_offset[2] if len(self.usd_offset) > 2 else 0.0
+        total_yaw = origin_yaw + usd_yaw
+        inv_ux, inv_uy = _rotate(-usd_x, -usd_y, -total_yaw)
+        inv_ox, inv_oy = _rotate(-origin_x, -origin_y, -origin_yaw)
+        self._set_grid(
+            free,
+            step=resolution,
+            yaw=total_yaw,
+            shift=(inv_ux + inv_ox, inv_uy + inv_oy),
+            flip_rows=True,
+        )
+
+    def _set_grid(
+        self,
+        valid: np.ndarray,
+        *,
+        step: float,
+        yaw: float,
+        shift: tuple[float, float],
+        flip_rows: bool,
+    ) -> None:
+        """Store a lookup grid where a cell is True if a valid position lies within
+        ``1.5 * grid_resolution`` of it (same tolerance as the original nearest-neighbour check)."""
+        radius = 1.5 * self.resolution / step
+        r = int(math.floor(radius))
+        mask = torch.from_numpy(valid.astype(np.float32))[None, None]
+        if r > 0:
+            offsets = torch.arange(-r, r + 1, dtype=torch.float32)
+            disk = (offsets[:, None] ** 2 + offsets[None, :] ** 2 <= radius**2).float()[None, None]
+            mask = torch.nn.functional.pad(mask, (r, r, r, r))
+            mask = torch.nn.functional.conv2d(mask, disk, padding=r)
+        self._grid_valid = (mask[0, 0] > 0.5).to(self.device)
+        self._grid_pad = r
+        self._grid_rows = valid.shape[0]
+        self._grid_step = step
+        self._grid_yaw = yaw
+        self._grid_shift = shift
+        self._grid_flip_rows = flip_rows
     
     def _init_from_bounds(
         self,
@@ -218,7 +278,16 @@ class FastSpawnSampler:
             valid_mask &= ~in_exclusion
         
         valid_positions = candidates[valid_mask].astype(np.float32)
-        
+
+        if len(valid_positions) > 0:
+            self._set_grid(
+                valid_mask.reshape(len(ys), len(xs)),
+                step=self.resolution,
+                yaw=0.0,
+                shift=(-float(xs[0]), -float(ys[0])),
+                flip_rows=False,
+            )
+
         if len(valid_positions) == 0:
             # All positions excluded - use center of bounds
             cx, cy = (x_min + x_max) / 2, (y_min + y_max) / 2
@@ -316,19 +385,28 @@ class FastSpawnSampler:
         """
         valid = self._valid_positions
         if valid is None or self._num_valid == 0 or len(positions) == 0:
-            return torch.ones(len(positions), dtype=torch.bool, device=self.device)
-        
-        # Compute distances to nearest valid position
-        threshold = self.resolution * 1.5
-        
-        # Batch compute min distances
-        # positions: (N, 2), valid: (M, 2)
-        pos_exp = positions.unsqueeze(1)  # (N, 1, 2)
-        valid_exp = valid.unsqueeze(0)  # (1, M, 2)
-        
-        # Min distance for each position
-        dists = torch.norm(pos_exp - valid_exp, dim=2)  # (N, M)
-        min_dists = dists.min(dim=1).values  # (N,)
-        
-        return min_dists <= threshold
+            return torch.ones(len(positions), dtype=torch.bool, device=positions.device)
+
+        if self._grid_valid is None:
+            # Single fallback position: a direct distance check is cheap.
+            dists = torch.norm(positions[:, None, :2].to(valid.device) - valid[None], dim=2)
+            return (dists.min(dim=1).values <= self.resolution * 1.5).to(positions.device)
+
+        grid = self._grid_valid
+        xy = positions[:, :2].to(device=grid.device, dtype=torch.float32)
+        c, s = math.cos(self._grid_yaw), math.sin(self._grid_yaw)
+        local_x = c * xy[:, 0] + s * xy[:, 1] + self._grid_shift[0]
+        local_y = -s * xy[:, 0] + c * xy[:, 1] + self._grid_shift[1]
+        cols = torch.round(local_x / self._grid_step).long()
+        rows = torch.round(local_y / self._grid_step).long()
+        if self._grid_flip_rows:
+            rows = (self._grid_rows - 1) - rows
+        rows = rows + self._grid_pad
+        cols = cols + self._grid_pad
+
+        height, width = grid.shape
+        inside = (rows >= 0) & (rows < height) & (cols >= 0) & (cols < width)
+        result = torch.zeros(len(positions), dtype=torch.bool, device=grid.device)
+        result[inside] = grid[rows[inside], cols[inside]]
+        return result.to(positions.device)
 

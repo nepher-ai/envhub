@@ -223,33 +223,23 @@ def _setup_app_launcher():
     from isaaclab.app import AppLauncher
     
     argv_to_parse = original_argv if original_argv is not None else sys.argv
-    
-    app_launcher_args = []
-    i = 1  # Skip script name
-    while i < len(argv_to_parse):
-        arg = argv_to_parse[i]
-        if arg in ("--category", "--scene"):
-            i += 2 if i + 1 < len(argv_to_parse) else 1
-            continue
-        if not arg.startswith("--") and i == 1:
-            i += 1
-            continue
-        app_launcher_args.append(arg)
-        i += 1
-    
-    parser = argparse.ArgumentParser()
+
+    # Only AppLauncher flags (e.g. --headless, --device) are consumed here; the
+    # subcommand, env ID and nepher options are left for click.
+    parser = argparse.ArgumentParser(add_help=False)
     AppLauncher.add_app_launcher_args(parser)
-    args_cli = parser.parse_args(app_launcher_args)
+    args_cli, _ = parser.parse_known_args(argv_to_parse[1:])
     
     app_launcher = AppLauncher(args_cli)
     return app_launcher.app
 
 
-@click.command()
+@click.command(context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 @click.argument("env_id")
 @click.option("--category", default=None, help="Environment category (optional, resolved from manifest)")
 @click.option("--scene", help="Scene name or index")
-def view(env_id: str, category: Optional[str], scene: Optional[str]):
+@click.option("--cache-dir", type=click.Path(), default=None, help="Override cache directory")
+def view(env_id: str, category: Optional[str], scene: Optional[str], cache_dir: Optional[str]):
     """View environment in Isaac Sim (requires isaaclab)."""
     simulation_app = None
     try:
@@ -259,7 +249,7 @@ def view(env_id: str, category: Optional[str], scene: Optional[str]):
         from isaaclab.sim import SimulationContext
         import omni.usd
         
-        env = load_env(env_id, category)
+        env = load_env(env_id, category, cache_dir=cache_dir)
 
         if scene:
             scene_cfg = load_scene(env, scene, category)
@@ -319,7 +309,7 @@ def view(env_id: str, category: Optional[str], scene: Optional[str]):
     except Exception as e:
         import traceback
         print_error(f"Failed to view environment: {str(e)}")
-        if __debug__ or os.getenv("NEPHER_DEBUG"):
+        if os.getenv("NEPHER_DEBUG"):
             click.echo(f"Exception type: {type(e).__name__}")
             traceback.print_exc()
     finally:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import weakref
 from pathlib import Path
 import torch
 
@@ -18,6 +19,22 @@ def _coerce_to_nested_float_lists(positions: torch.Tensor | list) -> list[list[f
     if isinstance(positions, torch.Tensor):
         return positions.detach().cpu().tolist()
     return [list(row) for row in positions]
+
+
+# Per-instance, per-device tensor cache kept outside the instance __dict__ so
+# strategies stay plain-list serializable.
+_TENSOR_CACHE: "weakref.WeakKeyDictionary[object, dict]" = weakref.WeakKeyDictionary()
+
+
+def cached_tensor(owner: object, name: str, data: list, device: str | torch.device) -> torch.Tensor:
+    """Return ``data`` as a float32 tensor on ``device``, converting once per device."""
+    per_owner = _TENSOR_CACHE.setdefault(owner, {})
+    key = (name, str(torch.device(device)))
+    tensor = per_owner.get(key)
+    if tensor is None:
+        tensor = torch.as_tensor(data, dtype=torch.float32, device=device)
+        per_owner[key] = tensor
+    return tensor
 
 
 class PrebakedPairStrategy:
@@ -52,9 +69,9 @@ class PrebakedPairStrategy:
     # ------------------------------------------------------------------
 
     def gen_spawn(self, n, *, device="cpu", env_ids=None, **kw):
-        idx = env_ids.long() % self.num_pairs
-        t_starts = torch.as_tensor(self._starts, dtype=torch.float32, device=device)
-        t_ends = torch.as_tensor(self._ends, dtype=torch.float32, device=device)
+        t_starts = cached_tensor(self, "starts", self._starts, device)
+        t_ends = cached_tensor(self, "ends", self._ends, device)
+        idx = env_ids.to(t_starts.device).long() % self.num_pairs
         starts = t_starts[idx]
         ends = t_ends[idx]
 
@@ -70,8 +87,8 @@ class PrebakedPairStrategy:
         return starts.clone(), yaws
 
     def gen_goal(self, n, *, device="cpu", env_ids=None, **kw):
-        idx = env_ids.long() % self.num_pairs
-        t_ends = torch.as_tensor(self._ends, dtype=torch.float32, device=device)
+        t_ends = cached_tensor(self, "ends", self._ends, device)
+        idx = env_ids.to(t_ends.device).long() % self.num_pairs
         return t_ends[idx].clone()
 
     def validate(self, positions, **kw):
